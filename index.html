@@ -1,1521 +1,1579 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>위너스 단어 시험지 생성기 (PDF/A4 최적화)</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SheetJS (Excel Parsing) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- PapaParse (CSV Parsing) -->
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <!-- html2pdf.js (Direct HTML to PDF Download bypass window.print) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            50: '#f0f7ff',
-                            100: '#e0effe',
-                            500: '#0070f3',
-                            600: '#0060d9',
-                            700: '#004eb8',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        /* Smooth scrollbars for preview lists */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>범용 1:1대응 암기 표 생성기</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS (Excel Parser) & PapaParse (CSV Parser) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- html2pdf.js for Client-side PDF Generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+    }
+    /* 인쇄용 고해상도 백그라운드 버퍼 컨테이너 (스크롤 밀림 현상 방지용) */
+    #pdf-buffer-container {
+      position: fixed;
+      top: 0;
+      left: -9999px;
+      width: 180mm;
+      z-index: -9999;
+      background: white;
+    }
+  </style>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-800 font-sans antialiased">
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased">
 
-    <div id="control-panel" class="max-w-7xl mx-auto px-4 py-8">
-        <header class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/20 mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                </svg>
-            </div>
-            <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">위너스 단어 시험지 생성기</h1>
-            <p class="mt-2 text-base text-slate-500">실제 단어장 표 형식 그대로, 시험 칸에만 완벽하게 빈칸(구멍)을 뚫어 PDF로 다운로드합니다.</p>
-        </header>
-
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <!-- Left Controls Column -->
-            <div class="lg:col-span-5 space-y-6">
-                <!-- 1. File Upload Card -->
-                <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
-                    <div class="flex items-center space-x-3 mb-4">
-                        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-brand-50 text-brand-600 font-semibold text-sm">1</span>
-                        <h2 class="text-lg font-bold text-slate-900">단어장 연동 상태</h2>
-                    </div>
-                    
-                    <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl hover:border-brand-400 transition-colors cursor-pointer relative" id="dropzone">
-                        <input id="fileInput" type="file" accept=".xlsx, .xls, .csv" class="sr-only" />
-                        <div class="space-y-1 text-center pointer-events-none">
-                            <svg class="mx-auto h-12 w-12 text-slate-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linecap="round" />
-                            </svg>
-                            <div class="flex text-sm text-slate-600 justify-center">
-                                <span class="relative rounded-md font-semibold text-brand-600 hover:text-brand-500">새 엑셀 파일 업로드</span>
-                                <p class="pl-1 text-slate-500">또는 여기에 놓기</p>
-                            </div>
-                            <p class="text-xs text-slate-400">기본 기출 단어장이 미리 내장되어 작동 중입니다.</p>
-                        </div>
-                    </div>
-
-                    <!-- File Info State -->
-                    <div id="fileInfoBox" class="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <div class="p-2 bg-emerald-500/10 text-emerald-600 rounded-lg">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h3 class="text-sm font-semibold text-slate-900 truncate max-w-[180px]" id="loadedFileName">기본 단어장 (모의고사 대역)</h3>
-                                    <p class="text-xs text-slate-500" id="loadedFileDetails">검색된 단어: 0개</p>
-                                </div>
-                            </div>
-                            <button id="btnRemoveFile" class="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-full hover:bg-slate-200/50">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2. Shuffle & Range Config Card -->
-                <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center space-x-3">
-                            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-brand-50 text-brand-600 font-semibold text-sm">2</span>
-                            <h2 class="text-lg font-bold text-slate-900">출제 범위 및 문항 수</h2>
-                        </div>
-                        <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">A4 세로 고정</span>
-                    </div>
-
-                    <div class="space-y-5">
-                        <!-- 출제 범위 필터 -->
-                        <div class="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3">
-                            <div class="flex items-center justify-between">
-                                <label class="flex items-center space-x-2 cursor-pointer">
-                                    <input type="checkbox" id="useRangeFilter" checked class="rounded text-brand-500 focus:ring-brand-500 h-4 w-4 border-slate-300" />
-                                    <span class="text-sm font-bold text-slate-700">특정 출제 범위만 지정</span>
-                                </label>
-                                <span id="rangeDetectStatus" class="text-[11px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold">감지 대기 중</span>
-                            </div>
-                            
-                            <!-- 스마트 범위 지정 기준 열 셀렉터 -->
-                            <div id="columnSelectGroup" class="space-y-1.5">
-                                <label class="block text-xs font-bold text-slate-600">출제 범위 기준 열 (엑셀 헤더)</label>
-                                <select id="rangeColumnSelect" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-brand-500 bg-white">
-                                    <option value="">지문 번호 (자동)</option>
-                                </select>
-                            </div>
-
-                            <div id="rangeInputGroup" class="grid grid-cols-2 gap-3 pt-1">
-                                <div>
-                                    <label class="block text-xs text-slate-500 mb-1">시작 지문 (이상)</label>
-                                    <input type="number" id="rangeStart" value="18" min="1" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
-                                </div>
-                                <div>
-                                    <label class="block text-xs text-slate-500 mb-1">종료 지문 (이하)</label>
-                                    <input type="number" id="rangeEnd" value="20" min="1" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
-                                </div>
-                            </div>
-                            <p class="text-[11px] text-slate-400 leading-relaxed">
-                                엑셀 내 '지문, 출처, 번호' 등의 열을 자동 파싱해 매칭합니다. 해당 열이 없다면 줄 번호(행 번호) 기준으로 제한합니다. (예: 18~20 입력시 18~20번 지문 혹은 18~20행 단어만 추출)
-                            </p>
-                        </div>
-
-                        <!-- 문항 수 슬라이더 -->
-                        <div class="space-y-2">
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm text-slate-500">생성할 단어 수 (20~50)</span>
-                                <span class="text-lg font-extrabold text-brand-600" id="itemCountDisplay">25개 (권장)</span>
-                            </div>
-                            <input id="itemCountRange" type="range" min="20" max="50" value="25" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-brand-500" />
-                        </div>
-
-                        <!-- 시험 유형 선택 -->
-                        <div class="space-y-2">
-                            <span class="text-sm text-slate-500 block">시험 출제 방향</span>
-                            <div class="grid grid-cols-3 gap-2">
-                                <button id="optEng" class="py-2.5 px-3 rounded-xl border-2 border-brand-500 bg-brand-50 text-brand-700 font-bold text-sm transition-all shadow-sm" onclick="setMode('ENG')">
-                                    영어 시험
-                                </button>
-                                <button id="optKor" class="py-2.5 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all" onclick="setMode('KOR')">
-                                    뜻 시험
-                                </button>
-                                <button id="optShuf" class="py-2.5 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all" onclick="setMode('SHUFFLE')">
-                                    무작위 셔플
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. Actions Card -->
-                <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
-                    <div class="flex items-center space-x-3 mb-4">
-                        <span class="flex items-center justify-center w-8 h-8 rounded-full bg-brand-50 text-brand-600 font-semibold text-sm">3</span>
-                        <h2 class="text-lg font-bold text-slate-900">PDF 출력 실행</h2>
-                    </div>
-                    <p class="text-xs text-slate-500 mb-4 leading-relaxed">
-                        버튼을 누르면 현재 로드된 상태 그대로 완벽하게 포맷팅된 <strong>교사용 정답지가 포함된 2페이지 PDF 시험지</strong>가 생성되어 PC 다운로드 폴더로 자동 다운로드됩니다.
-                    </p>
-                    <button id="btnPrint" class="w-full flex items-center justify-center space-x-2 py-4 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:pointer-events-none text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 transition-all" onclick="triggerPrint()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                        </svg>
-                        <span>PDF 시험지 인쇄 / 저장하기</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Right Live Preview Column -->
-            <div id="live-preview-section" class="lg:col-span-7 flex flex-col space-y-3">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
-                        <span class="flex w-2.5 h-2.5 rounded-full bg-slate-300 animate-pulse" id="previewLed"></span>
-                        실시간 A4 출력 레이아웃 미리보기
-                    </h2>
-                    <span class="text-xs text-brand-600 font-bold" id="previewCount">기본 단어장 연동됨</span>
-                </div>
-                
-                <!-- Scaled A4 Sheet Container -->
-                <div class="border border-slate-300/80 bg-slate-200 rounded-2xl p-4 flex justify-center items-start overflow-y-auto max-h-[750px] shadow-inner">
-                    <div id="a4-mini-preview" class="w-full max-w-[550px] bg-white shadow-2xl border border-slate-300 p-6" style="aspect-ratio: 1 / 1.414; font-size: 10px;">
-                        <!-- Mock A4 empty state -->
-                    </div>
-                </div>
-            </div>
+  <!-- 상단 글로벌 네비게이션 헤더 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+      <div class="flex items-center gap-3">
+        <div class="bg-indigo-600 text-white p-2.5 rounded-xl shadow-md shadow-indigo-100">
+          <i class="fa-solid fa-layer-group text-xl"></i>
         </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 tracking-tight leading-none mb-1">범용 1:1대응 암기 표 생성기</h1>
+          <p class="text-xs text-slate-500 font-medium">단어-뜻, 개념-정의, 국가-수도 등 세상 모든 1:1 암기 완벽 지원</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-3">
+        <!-- AI 어시스턴트 온라인/오프라인 상태 표시등 -->
+        <div id="ai-status-badge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold transition-all">
+          <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>
+          <span>상태 감지 중...</span>
+        </div>
+        <!-- 메인 탭 전환 -->
+        <div class="flex bg-slate-100 p-1 rounded-xl">
+          <button id="tab-print-btn" onclick="switchTab('print')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center gap-2">
+            <i class="fa-solid fa-print"></i> 인쇄용 시험지 빌드
+          </button>
+          <button id="tab-quiz-btn" onclick="switchTab('quiz')" class="px-4 py-2 text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-950 transition-all flex items-center gap-2">
+            <i class="fa-solid fa-circle-play"></i> 온라인 암기 퀴즈
+          </button>
+        </div>
+      </div>
     </div>
+  </header>
 
-    <!-- Offscreen engine print target buffer (Rendered at top: 0, left: -9999px fixed to eliminate viewport scroll offset bugs) -->
-    <div style="position: fixed; left: -9999px; top: 0; width: 210mm; background: white; overflow: hidden; z-index: -9999;">
-        <div id="print-pdf-payload"></div>
+  <!-- 메인 레이아웃 콘텐트 -->
+  <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- 왼쪽 조절 및 통제 사이드바 -->
+    <aside class="lg:col-span-4 flex flex-col gap-6">
+      
+      <!-- 1. 제미나이 인공지능(AI) 제어 패널 (하이브리드 지원) -->
+      <section class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full -mr-8 -mt-8 -z-10 opacity-60"></div>
+        <div class="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+          <i class="fa-solid fa-wand-magic-sparkles text-indigo-600 text-lg"></i>
+          <h2 class="text-base font-bold text-slate-950">AI 스마트 암기 지원</h2>
+        </div>
+
+        <div class="space-y-4">
+          <!-- 사용자 개인 API 키 입력 (환경 제공 키 우선, 없을 시 대비) -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">사용자 Gemini API 키 (선택사항)</label>
+            <div class="relative">
+              <input id="user-api-key" type="password" placeholder="시스템 제공 기본 키가 사용됩니다" class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-10 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <button onclick="toggleKeyVisibility()" class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 text-xs">
+                <i id="key-visibility-icon" class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- AI 추천 생성 도구 -->
+          <div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-3">
+            <span class="text-xs font-extrabold text-indigo-800 flex items-center gap-1.5">
+              <i class="fa-solid fa-lightbulb"></i> AI로 신규 암기 세트 생성
+            </span>
+            <input id="ai-generate-topic" type="text" placeholder="예: 스페인어 기본 단어, IT 기술 면접" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="ai-gen-btn" onclick="generateSetWithAI()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm">
+              <i class="fa-solid fa-sparkles"></i> 암기 데이터 무한 수집하기
+            </button>
+          </div>
+
+          <!-- AI 빈칸 채우기 도구 -->
+          <div class="flex gap-2">
+            <button id="ai-fill-btn" onclick="fillMissingWithAI()" class="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-pen-fancy"></i> AI 정답 자동 채우기
+            </button>
+          </div>
+        </div>
+      </section>
+      
+      <!-- 2. 학습 데이터 프리셋 & 라벨 -->
+      <section class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+          <i class="fa-solid fa-sliders text-indigo-500 text-lg"></i>
+          <h2 class="text-base font-bold text-slate-950">학습 데이터 프리셋 & 라벨</h2>
+        </div>
+
+        <!-- 4가지 프리셋 제공 -->
+        <div class="mb-4">
+          <label class="block text-xs font-bold text-slate-500 mb-2">원클릭 샘플 데이터 세트 로드</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="loadSubjectPreset('english')" class="bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all">
+              <span>🇬🇧</span> 영어 단어-뜻
+            </button>
+            <button onclick="loadSubjectPreset('history')" class="bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all">
+              <span>🇰🇷</span> 한국사 사건-연도
+            </button>
+            <button onclick="loadSubjectPreset('science')" class="bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all">
+              <span>🧪</span> 과학 개념-용어
+            </button>
+            <button onclick="loadSubjectPreset('capitals')" class="bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all">
+              <span>🌍</span> 국가별 수도
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-3.5 pt-2 border-t border-slate-100">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">인쇄용 시험지 메인 타이틀</label>
+            <input id="custom-test-title" type="text" value="종합 학력 평가 고사" oninput="triggerRebuild()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">왼쪽 열 이름 (질문)</label>
+              <input id="label-col1" type="text" value="질문 항목" oninput="triggerRebuild()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">오른쪽 열 이름 (정답)</label>
+              <input id="label-col2" type="text" value="정답 내용" oninput="triggerRebuild()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 출제 범위 설정 패널 -->
+      <section class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+          <i class="fa-solid fa-list-ol text-indigo-500 text-lg"></i>
+          <h2 class="text-base font-bold text-slate-950">출제 및 학습 범위 제어</h2>
+        </div>
+
+        <div class="space-y-4">
+          <div class="flex justify-between items-center bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100/50">
+            <span class="text-xs font-semibold text-indigo-700" id="data-status-label">현재 기본 DB 활성화</span>
+            <span class="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold" id="data-total-count">0개 감지됨</span>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              <label class="block text-xs font-bold text-slate-600 mb-1">시작 번호 (No)</label>
+              <input id="range-start" type="number" min="1" max="100" value="1" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="text-slate-400 font-bold self-end mb-2">~</div>
+            <div class="flex-1">
+              <label class="block text-xs font-bold text-slate-600 mb-1">종료 번호 (No)</label>
+              <input id="range-end" type="number" min="1" max="100" value="30" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-1.5">
+              <label class="block text-xs font-bold text-slate-600">출제 문항 수</label>
+              <span id="question-count-label" class="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg">25문항</span>
+            </div>
+            <input id="question-count-slider" type="range" min="5" max="60" value="25" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+            <div class="flex justify-between text-[10px] text-slate-400 font-semibold mt-1">
+              <span>최소 5개</span>
+              <span>최대 60개</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 외부 엑셀/CSV 업로드 패널 -->
+      <section class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-file-excel text-emerald-500 text-lg"></i>
+            <h2 class="text-base font-bold text-slate-950">커스텀 파일 불러오기</h2>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 leading-relaxed mb-4">
+          스스로 직접 정리한 엑셀(XLSX)이나 CSV 파일을 올려보세요. 어떠한 열 이름이 적혀있든 완벽히 식별하여 매칭합니다.
+        </p>
+        <div class="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl p-4 text-center cursor-pointer transition-all relative">
+          <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer">
+          <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 mb-2"></i>
+          <p class="text-xs font-bold text-slate-700">클릭하여 파일 업로드</p>
+          <p class="text-[10px] text-slate-400 mt-1">엑셀(.xlsx) 또는 CSV 업로드</p>
+        </div>
+        <div id="file-info-container" class="hidden mt-3 bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg flex items-center justify-between text-xs">
+          <span id="file-name-label" class="text-emerald-800 font-medium truncate max-w-[180px]">사용자단어장.xlsx</span>
+          <button onclick="resetToPresetData()" class="text-rose-600 hover:text-rose-800 font-extrabold flex items-center gap-1">
+            <i class="fa-solid fa-rotate-left"></i> 기본화
+          </button>
+        </div>
+      </section>
+
+      <!-- 5. 실시간 알림 토스트 모듈 -->
+      <div id="toast-notify" class="hidden bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 transition-all transform scale-95 duration-300">
+        <span id="toast-icon" class="text-emerald-400 text-sm"></span>
+        <span id="toast-message" class="text-xs font-bold">작업이 정상 처리되었습니다.</span>
+      </div>
+    </aside>
+
+    <!-- 오른쪽 주력 뷰포트 (선택된 탭 콘텐츠 표시) -->
+    <div class="lg:col-span-8 flex flex-col gap-6">
+      
+      <!-- [탭 1] 인쇄 및 PDF 생성 패널 -->
+      <section id="panel-print" class="space-y-6">
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-between items-center gap-4">
+          <div class="space-y-1">
+            <h2 class="text-lg font-bold text-slate-950 flex items-center gap-2">
+              <i class="fa-solid fa-file-pdf text-indigo-600"></i> 실시간 시험지 빌더 및 저장
+            </h2>
+            <p class="text-xs text-slate-500">학생용 시험지와 빨간색 모범 정답지가 2페이지 구성으로 깔끔히 병합된 PDF가 즉시 다운로드됩니다.</p>
+          </div>
+          
+          <button onclick="downloadPerfectPDF()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 self-start">
+            <i class="fa-solid fa-file-arrow-down"></i> PDF 시험지 생성 및 저장
+          </button>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 class="text-sm font-bold text-slate-900 mb-4">출제 방식 및 디자인 상세 튜닝</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-2">시험 출제 유형</label>
+              <select id="exam-test-type" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="meaning">오른쪽 열 빈칸 뚫기 (왼쪽 제시)</option>
+                <option value="word">왼쪽 열 빈칸 뚫기 (오른쪽 제시)</option>
+                <option value="random">왼쪽/오른쪽 무작위 교차 빈칸 뚫기</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-2">배열 무작위 셔플 (Fisher-Yates)</label>
+              <select id="exam-shuffle" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="true">수학적 균등 무작위 셔플 (ON)</option>
+                <option value="false">원래의 정적 나열 순서 그대로 (OFF)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-2">테두리 격자 스타일</label>
+              <select id="exam-grid-style" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="classic">클래식 실선 격자 (가장 명확함)</option>
+                <option value="light">세련되고 부드러운 격자</option>
+                <option value="minimal">테두리 없는 가로선 형태</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 실시간 A4 프리뷰 모형 -->
+        <div class="bg-slate-200 p-4 sm:p-8 rounded-2xl flex justify-center overflow-auto shadow-inner text-slate-800">
+          <div class="bg-white shadow-2xl min-w-[320px] max-w-[720px] w-full p-6 sm:p-10 border border-slate-300 relative transition-all" style="aspect-ratio: 1 / 1.414;" id="live-a4-preview">
+            <!-- 실시간 동적 렌더링 영역 -->
+            <div id="preview-content" class="w-full h-full text-[11px] leading-tight flex flex-col justify-between">
+              <!-- JS 영역에서 실시간 조립 후 주입됩니다. -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- [탭 2] 스마트 온라인 퀴즈 센터 패널 -->
+      <section id="panel-quiz" class="hidden space-y-6">
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+          <div class="space-y-1">
+            <h2 class="text-lg font-bold text-slate-950 flex items-center gap-2">
+              <i class="fa-solid fa-graduation-cap text-indigo-600"></i> 스마트 온라인 퀴즈 센터
+            </h2>
+            <p class="text-xs text-slate-500">현재 입력된 데이터와 분류를 기준으로 플래시 카드와 동적 채점식 퀴즈를 직접 치러봅니다.</p>
+          </div>
+          
+          <div class="flex gap-2">
+            <button onclick="startQuiz('flashcard')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5">
+              <i class="fa-solid fa-window-maximize"></i> 플래시카드
+            </button>
+            <button onclick="startQuiz('multiple')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5">
+              <i class="fa-solid fa-list-check"></i> 4지선다형
+            </button>
+            <button onclick="startQuiz('typing')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5">
+              <i class="fa-solid fa-spell-check"></i> 주관식 채점
+            </button>
+          </div>
+        </div>
+
+        <!-- 퀴즈 작동 컨테이너 -->
+        <div id="quiz-workspace" class="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-sm min-h-[380px] flex flex-col justify-center items-center text-center">
+          <!-- 대기 화면 디폴트 디자인 -->
+          <div class="max-w-md space-y-4">
+            <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-inner">
+              <i class="fa-solid fa-laptop-code"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-950">스마트 실시간 자가 시험 센터</h3>
+            <p class="text-xs text-slate-500 leading-relaxed" id="quiz-intro-desc">
+              상단의 버튼을 선택해 원하는 학습 유형의 단어 퀴즈를 치러보세요. 현재 왼쪽에 설정된 출제 범위의 단어가 자동으로 완전히 셔플되어 출제됩니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
     </div>
+  </main>
 
-    <!-- Toast Notification Container -->
-    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-12 opacity-0 pointer-events-none transition-all duration-300 flex items-center space-x-2.5 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl">
-        <span id="toastIcon" class="text-emerald-400"></span>
-        <span id="toastText" class="text-sm font-medium"></span>
+  <!-- 바텀 카피라이트 정보 -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 font-medium mt-12">
+    <div class="max-w-7xl mx-auto px-4 flex justify-between items-center flex-wrap gap-2">
+      <span>© 2026 범용 1:1대응 암기 표 생성기.</span>
+      <span class="text-[10px] bg-slate-100 px-2.5 py-0.5 rounded-full font-bold">100% 로컬 보안 오프라인 구동</span>
     </div>
+  </footer>
 
-    <script>
-        const defaultDatabase = [
-            // 18번
-            { rangeVal: 18, word: "appreciate", meaning: "감사하다, 가치를 인정하다" },
-            { rangeVal: 18, word: "continued", meaning: "지속적인, 계속된" },
-            { rangeVal: 18, word: "previously", meaning: "이전에, 미리" },
-            { rangeVal: 18, word: "announce", meaning: "발표하다, 알리다" },
-            { rangeVal: 18, word: "conduct", meaning: "수행하다, 실시하다" },
-            { rangeVal: 18, word: "essential", meaning: "필수적인, 중요한" },
-            { rangeVal: 18, word: "maintenance", meaning: "유지보수, 정비" },
-            { rangeVal: 18, word: "underground", meaning: "지하의" },
-            { rangeVal: 18, word: "parking lot", meaning: "주차장" },
-            { rangeVal: 18, word: "as a result", meaning: "그 결과로" },
-            { rangeVal: 18, word: "facility", meaning: "시설, 설비" },
-            { rangeVal: 18, word: "unavailable", meaning: "이용 불가능한" },
-            { rangeVal: 18, word: "temporary", meaning: "일시적인, 임시의" },
-            { rangeVal: 18, word: "outdoor", meaning: "야외의" },
-            { rangeVal: 18, word: "across from", meaning: "맞은편에" },
-            { rangeVal: 18, word: "main entrance", meaning: "정문, 주 출입구" },
-            { rangeVal: 18, word: "be committed to", meaning: "~에 전념하다, 헌신하다" },
-            { rangeVal: 18, word: "complete", meaning: "완료하다, 완수하다" },
-            { rangeVal: 18, word: "as as possible", meaning: "가능한 한 ~하게" },
-            { rangeVal: 18, word: "sincerely", meaning: "진심으로" },
-            { rangeVal: 18, word: "apologize", meaning: "사과하다" },
-            { rangeVal: 18, word: "inconvenience", meaning: "불편" },
-            { rangeVal: 18, word: "patience", meaning: "인내, 참을성" },
-            { rangeVal: 18, word: "cooperation", meaning: "협조, 협력" },
-            // 19번
-            { rangeVal: 19, word: "look around", meaning: "둘러보다" },
-            { rangeVal: 19, word: "noisy", meaning: "시끄러운" },
-            { rangeVal: 19, word: "grip", meaning: "꽉 잡다, 움켜쥐다" },
-            { rangeVal: 19, word: "tray", meaning: "쟁반" },
-            { rangeVal: 19, word: "tightly", meaning: "단단히, 꼭" },
-            { rangeVal: 19, word: "weight", meaning: "무게, 비중" },
-            { rangeVal: 19, word: "new to", meaning: "~에 낯선, 처음인" },
-            { rangeVal: 19, word: "anxious", meaning: "불안한, 걱정스러운" },
-            { rangeVal: 19, word: "sigh", meaning: "한숨을 쉬다" },
-            { rangeVal: 19, word: "corner", meaning: "모퉁이, 구석" },
-            { rangeVal: 19, word: "make it through", meaning: "~을 헤쳐 나가다, 견뎌내다" },
-            { rangeVal: 19, word: "the rest of", meaning: "~의 나머지" },
-            { rangeVal: 19, word: "place down", meaning: "내려놓다" },
-            { rangeVal: 19, word: "opposite", meaning: "맞은편의, 반대의" },
-            { rangeVal: 19, word: "by the way", meaning: "그런데" },
-            { rangeVal: 19, word: "lend", meaning: "빌려주다" },
-            { rangeVal: 19, word: "invisible", meaning: "보이지 않는" },
-            { rangeVal: 19, word: "melt away", meaning: "녹아 사라지다" },
-            { rangeVal: 19, word: "at ease", meaning: "마음이 편안한" },
-            { rangeVal: 19, word: "brightly", meaning: "밝게" },
-            // 20번
-            { rangeVal: 20, word: "need to", meaning: "~할 필요가 있다" },
-            { rangeVal: 20, word: "master", meaning: "마스터하다, 숙달하다" },
-            { rangeVal: 20, word: "to this end", meaning: "이를 위해, 이 목적을 달성하기 위해" },
-            { rangeVal: 20, word: "end", meaning: "목적, 끝" },
-            { rangeVal: 20, word: "reduce", meaning: "줄이다, 축소하다" },
-            { rangeVal: 20, word: "connection to", meaning: "~와의 연결, 관계" },
-            { rangeVal: 20, word: "distract from", meaning: "~로부터 주의를 분산시키다" },
-            { rangeVal: 20, word: "goal", meaning: "목표" },
-            { rangeVal: 20, word: "mistake", meaning: "실수" },
-            { rangeVal: 20, word: "focused", meaning: "집중된" },
-            { rangeVal: 20, word: "lead to", meaning: "~로 이어지다" },
-            { rangeVal: 20, word: "unidimensional", meaning: "일차원적인" },
-            { rangeVal: 20, word: "few", meaning: "거의 없는" },
-            { rangeVal: 20, word: "remedy", meaning: "해결책, 치료법" },
-            { rangeVal: 20, word: "inevitably", meaning: "필연적으로, 불가피하게" },
-            { rangeVal: 20, word: "bombard", meaning: "퍼붓다, 공세하다" },
-            { rangeVal: 20, word: "tough", meaning: "힘든, 거친" },
-            { rangeVal: 20, word: "during", meaning: "~ 동안에" },
-            { rangeVal: 20, word: "such a", meaning: "그러한, 매우 ~한" },
-            { rangeVal: 20, word: "transition", meaning: "전환, 변천" },
-            { rangeVal: 20, word: "counterbalance", meaning: "상쇄하다, 균형을 맞추다" },
-            { rangeVal: 20, word: "instead of", meaning: "~ 대신에" },
-            { rangeVal: 20, word: "stay", meaning: "유지하다, 머무르다" },
-            { rangeVal: 20, word: "laser-focused", meaning: "레이저처럼 고도로 집중된" },
-            { rangeVal: 20, word: "as", meaning: "~로서, ~할 때" },
-            { rangeVal: 20, word: "jumping-off point", meaning: "출발점, 발판" },
-            { rangeVal: 20, word: "network", meaning: "인적 네트워크, 망" },
-            { rangeVal: 20, word: "shape", meaning: "형성하다, 모양" },
-            // 21번
-            { rangeVal: 21, word: "step toward", meaning: "~을 향한 단계" },
-            { rangeVal: 21, word: "establish", meaning: "확립하다, 설립하다" },
-            { rangeVal: 21, word: "respectful", meaning: "존중하는, 공손한" },
-            { rangeVal: 21, word: "community", meaning: "공동체" },
-            { rangeVal: 21, word: "acceptance", meaning: "수용, 받아들임" },
-            { rangeVal: 21, word: "regardless of", meaning: "~에 상관없이" },
-            { rangeVal: 21, word: "obvious", meaning: "명백한, 분명한" },
-            { rangeVal: 21, word: "error", meaning: "오류, 실수" },
-            { rangeVal: 21, word: "rich", meaning: "풍부한" },
-            { rangeVal: 21, word: "mathematical", meaning: "수학적인" },
-            { rangeVal: 21, word: "discussion", meaning: "토론, 논의" },
-            { rangeVal: 21, word: "occur", meaning: "발생하다, 일어나다" },
-            { rangeVal: 21, word: "expectation", meaning: "기대, 예상" },
-            { rangeVal: 21, word: "in place", meaning: "제자리에, 마련된" },
-            { rangeVal: 21, word: "rooted in", meaning: "~에 뿌리를 둔" },
-            { rangeVal: 21, word: "misconception", meaning: "오해, 잘못된 생각" },
-            { rangeVal: 21, word: "unless", meaning: "만약 ~하지 않으면" },
-            { rangeVal: 21, word: "allow", meaning: "허용하다, 허락하다" },
-            { rangeVal: 21, word: "bring to the forefront", meaning: "최전선으로 끌어올리다, 표면화하다" },
-            { rangeVal: 21, word: "confront", meaning: "직면하다, 맞서다" },
-            { rangeVal: 21, word: "thinking", meaning: "사고, 생각" },
-            { rangeVal: 21, word: "safe", meaning: "안전한" },
-            { rangeVal: 21, word: "environment", meaning: "환경" },
-            { rangeVal: 21, word: "be willing", meaning: "기꺼이 ~하다" },
-            { rangeVal: 21, word: "risk", meaning: "위험을 무릅쓰다" },
-            { rangeVal: 21, word: "share with", meaning: "~와 공유하다" },
-            { rangeVal: 21, word: "incorrect", meaning: "틀린, 부정확한" },
-            { rangeVal: 21, word: "peer", meaning: "동료, 또래" },
-            { rangeVal: 21, word: "in order to", meaning: "~하기 위해서" },
-            { rangeVal: 21, word: "grow", meaning: "성장하다" },
-            { rangeVal: 21, word: "mathematically", meaning: "수학적으로" },
-            { rangeVal: 21, word: "model", meaning: "모델로 삼다, 모형" },
-            { rangeVal: 21, word: "expect", meaning: "기대하다" },
-            { rangeVal: 21, word: "comment", meaning: "의견, 주석" },
-            { rangeVal: 21, word: "educator", meaning: "교육자" },
-            { rangeVal: 21, word: "consider", meaning: "고려하다, 여기다" },
-            { rangeVal: 21, word: "verbal", meaning: "언어적인, 말로 하는" },
-            { rangeVal: 21, word: "physical", meaning: "신체적인, 물리적인" },
-            { rangeVal: 21, word: "expression", meaning: "표현" },
-            { rangeVal: 21, word: "indicate", meaning: "나타내다, 가리키다" },
-            { rangeVal: 21, word: "agreement", meaning: "동의, 합의" },
-            { rangeVal: 21, word: "disagreement", meaning: "불일치, 반대" },
-            { rangeVal: 21, word: "practice", meaning: "관행, 연습" },
-            { rangeVal: 21, word: "blank", meaning: "멍한, 빈" },
-            { rangeVal: 21, word: "look to", meaning: "~을 기대하다, 의존하다" },
-            { rangeVal: 21, word: "source", meaning: "출처, 근원" },
-            { rangeVal: 21, word: "correct", meaning: "올바른, 수정하다" },
-            { rangeVal: 21, word: "part of", meaning: "~의 일부" },
-            { rangeVal: 21, word: "shift to", meaning: "~로의 전환" },
-            { rangeVal: 21, word: "equip", meaning: "갖추다, 장비하다" },
-            { rangeVal: 21, word: "defend", meaning: "방어하다, 변호하다" },
-            { rangeVal: 21, word: "behind", meaning: "~ 뒤에" },
-            { rangeVal: 21, word: "solution", meaning: "해결책, 용액" },
-            { rangeVal: 21, word: "derogatory", meaning: "경멸적인, 명예를 훼손하는" },
-            // 22번
-            { rangeVal: 22, word: "usual", meaning: "평소의, 통상의" },
-            { rangeVal: 22, word: "intercity", meaning: "도시 간의" },
-            { rangeVal: 22, word: "traveler", meaning: "여행자" },
-            { rangeVal: 22, word: "slowly", meaning: "느리게" },
-            { rangeVal: 22, word: "station", meaning: "역, 정거장" },
-            { rangeVal: 22, word: "passenger", meaning: "승객" },
-            { rangeVal: 22, word: "be familiar with", meaning: "~에 익숙하다" },
-            { rangeVal: 22, word: "routine", meaning: "일상, 루틴" },
-            { rangeVal: 22, word: "baggage", meaning: "수하물, 짐" },
-            { rangeVal: 22, word: "handle", meaning: "다루다, 처리하다" },
-            { rangeVal: 22, word: "check", meaning: "위탁하다, 확인하다" },
-            { rangeVal: 22, word: "wait for", meaning: "~을 기다리다" },
-            { rangeVal: 22, word: "connection", meaning: "연결, 환승" },
-            { rangeVal: 22, word: "delayed", meaning: "지연된" },
-            { rangeVal: 22, word: "require", meaning: "요구하다, 필요로 하다" },
-            { rangeVal: 22, word: "comfortable", meaning: "편안한" },
-            { rangeVal: 22, word: "commuter", meaning: "통근자" },
-            { rangeVal: 22, word: "on the other hand", meaning: "반면에" },
-            { rangeVal: 22, word: "route", meaning: "경로, 노선" },
-            { rangeVal: 22, word: "little or no", meaning: "거의 없는" },
-            { rangeVal: 22, word: "luggage", meaning: "짐, 수하물" },
-            { rangeVal: 22, word: "usually", meaning: "보통, 대개" },
-            { rangeVal: 22, word: "in a hurry", meaning: "서둘러, 급히" },
-            { rangeVal: 22, word: "direct", meaning: "직접적인, 직행의" },
-            { rangeVal: 22, word: "access", meaning: "접근" },
-            { rangeVal: 22, word: "local", meaning: "지역의, 현지의" },
-            { rangeVal: 22, word: "street", meaning: "거리" },
-            { rangeVal: 22, word: "transport", meaning: "교통, 운송" },
-            { rangeVal: 22, word: "traffic", meaning: "교통량" },
-            { rangeVal: 22, word: "separate", meaning: "분리하다" },
-            { rangeVal: 22, word: "avoid", meaning: "피하다" },
-            { rangeVal: 22, word: "conflict", meaning: "갈등, 충돌" },
-            { rangeVal: 22, word: "confusion", meaning: "혼란" },
-            { rangeVal: 22, word: "arrive", meaning: "도착하다" },
-            { rangeVal: 22, word: "depart", meaning: "출발하다" },
-            { rangeVal: 22, word: "on levels", meaning: "층별로, 여러 레벨에서" },
-            { rangeVal: 22, word: "platform", meaning: "승강장, 플랫폼" },
-            { rangeVal: 22, word: "so that", meaning: "~하기 위해서" },
-            { rangeVal: 22, word: "movement", meaning: "이동, 움직임" },
-            { rangeVal: 22, word: "cross", meaning: "교차하다, 건너다" },
-            { rangeVal: 22, word: "instance", meaning: "사례, 경우" },
-            { rangeVal: 22, word: "be in use", meaning: "사용 중이다" },
-            { rangeVal: 22, word: "clear", meaning: "명확한" },
-            { rangeVal: 22, word: "direction", meaning: "방향, 지시" },
-            { rangeVal: 22, word: "routing", meaning: "경로 설정" },
-            { rangeVal: 22, word: "means", meaning: "수단, 방법" },
-            { rangeVal: 22, word: "channelization", meaning: "채널화, 경로 분리" },
-            { rangeVal: 22, word: "desirable", meaning: "바람직한" },
-            { rangeVal: 22, word: "retrieve", meaning: "되찾다, 회수하다" },
-            { rangeVal: 22, word: "concise", meaning: "간결한" },
-            // 23번
-            { rangeVal: 23, word: "most", meaning: "대부분의" },
-            { rangeVal: 23, word: "performance", meaning: "공연, 성과" },
-            { rangeVal: 23, word: "lighting", meaning: "조명" },
-            { rangeVal: 23, word: "be made up of", meaning: "~로 구성되다" },
-            { rangeVal: 23, word: "a number of", meaning: "많은" },
-            { rangeVal: 23, word: "look", meaning: "모습, 외관" },
-            { rangeVal: 23, word: "state", meaning: "상태, 국가" },
-            { rangeVal: 23, word: "cue", meaning: "신호, 큐" },
-            { rangeVal: 23, word: "trigger", meaning: "유발하다, 방출하다" },
-            { rangeVal: 23, word: "actor", meaning: "배우" },
-            { rangeVal: 23, word: "usually", meaning: "보통" },
-            { rangeVal: 23, word: "motivation", meaning: "동기 부여, 이유" },
-            { rangeVal: 23, word: "obvious", meaning: "명백한" },
-            { rangeVal: 23, word: "require", meaning: "요구하다" },
-            { rangeVal: 23, word: "brighten", meaning: "밝게 하다" },
-            { rangeVal: 23, word: "setting", meaning: "배경, 설정" },
-            { rangeVal: 23, word: "turn on", meaning: "켜다" },
-            { rangeVal: 23, word: "light switch", meaning: "조명 스위치" },
-            { rangeVal: 23, word: "rapid", meaning: "신속한, 빠른" },
-            { rangeVal: 23, word: "intensity", meaning: "강도, 세기" },
-            { rangeVal: 23, word: "at the end of", meaning: "~의 끝에" },
-            { rangeVal: 23, word: "dance number", meaning: "댄스 곡, 무용 번호" },
-            { rangeVal: 23, word: "traditional", meaning: "전통적인" },
-            { rangeVal: 23, word: "musical", meaning: "뮤지컬" },
-            { rangeVal: 23, word: "known as", meaning: "~로 알려진" },
-            { rangeVal: 23, word: "button cue", meaning: "버튼 큐 (완벽한 마무리를 위한 신호)" },
-            { rangeVal: 23, word: "provide", meaning: "제공하다" },
-            { rangeVal: 23, word: "subtle", meaning: "미묘한" },
-            { rangeVal: 23, word: "atmosphere", meaning: "분위기, 대기" },
-            { rangeVal: 23, word: "minute", meaning: "미세한, 분" },
-            { rangeVal: 23, word: "motivate", meaning: "동기를 부여하다" },
-            { rangeVal: 23, word: "mention", meaning: "언급하다" },
-            { rangeVal: 23, word: "sunset", meaning: "일몰" },
-            { rangeVal: 23, word: "intention", meaning: "의도" },
-            { rangeVal: 23, word: "normal", meaning: "정상적인" },
-            { rangeVal: 23, word: "threatening", meaning: "협박하는, 위협적인" },
-            { rangeVal: 23, word: "production", meaning: "제작, 연출" },
-            { rangeVal: 23, word: "moment", meaning: "순간" },
-            { rangeVal: 23, word: "dramatic", meaning: "극적인" },
-            { rangeVal: 23, word: "unit", meaning: "단위" },
-            { rangeVal: 23, word: "scene", meaning: "장면" },
-            { rangeVal: 23, word: "transition", meaning: "전환" },
-            // 24번
-            { rangeVal: 24, word: "own", meaning: "자신의, 소유하다" },
-            { rangeVal: 24, word: "sound", meaning: "소리, 음향" },
-            { rangeVal: 24, word: "impose on", meaning: "~에 부과하다, 강요하다" },
-            { rangeVal: 24, word: "characteristic", meaning: "특징, 특성" },
-            { rangeVal: 24, word: "audio", meaning: "오디오의, 음향의" },
-            { rangeVal: 24, word: "signal", meaning: "신호" },
-            { rangeVal: 24, word: "contain", meaning: "포함하다" },
-            { rangeVal: 24, word: "actually", meaning: "실제로" },
-            { rangeVal: 24, word: "kind of", meaning: "일종의, 어느 정도" },
-            { rangeVal: 24, word: "remarkable", meaning: "주목할 만한, 놀라운" },
-            { rangeVal: 24, word: "everywhere", meaning: "어디에나" },
-            { rangeVal: 24, word: "no matter", meaning: "~에 상관없이" },
-            { rangeVal: 24, word: "environment", meaning: "환경" },
-            { rangeVal: 24, word: "part of", meaning: "~의 일부" },
-            { rangeVal: 24, word: "playback", meaning: "재생" },
-            { rangeVal: 24, word: "path", meaning: "경로" },
-            { rangeVal: 24, word: "loudspeaker", meaning: "확성기, 스피커" },
-            { rangeVal: 24, word: "set up", meaning: "설치하다" },
-            { rangeVal: 24, word: "cause", meaning: "원인, 유발하다" },
-            { rangeVal: 24, word: "sometimes", meaning: "때때로" },
-            { rangeVal: 24, word: "dramatically", meaning: "극적으로" },
-            { rangeVal: 24, word: "place", meaning: "장소, 놓다" },
-            { rangeVal: 24, word: "location", meaning: "위치" },
-            { rangeVal: 24, word: "move around", meaning: "돌아다니다" },
-            { rangeVal: 24, word: "similarly", meaning: "유사하게, 마찬가지로" },
-            { rangeVal: 24, word: "record", meaning: "녹음하다, 기록" },
-            { rangeVal: 24, word: "musical", meaning: "음악의" },
-            { rangeVal: 24, word: "instrument", meaning: "악기, 도구" },
-            { rangeVal: 24, word: "receive", meaning: "받다, 수신하다" },
-            { rangeVal: 24, word: "microphone", meaning: "마이크" },
-            { rangeVal: 24, word: "move", meaning: "움직이다" },
-            { rangeVal: 24, word: "acoustical", meaning: "음향의, 청각의" },
-            // 25번
-            { rangeVal: 25, word: "percentage", meaning: "백분율, 비율" },
-            { rangeVal: 25, word: "consumer", meaning: "소비자" },
-            { rangeVal: 25, word: "be likely to", meaning: "~할 가능성이 있다" },
-            { rangeVal: 25, word: "respond to", meaning: "~에 응답하다" },
-            { rangeVal: 25, word: "review", meaning: "리뷰, 후기" },
-            { rangeVal: 25, word: "request", meaning: "요청" },
-            { rangeVal: 25, word: "method", meaning: "방법" },
-            { rangeVal: 25, word: "among", meaning: "~ 사이에" },
-            { rangeVal: 25, word: "except for", meaning: "~을 제외하고" },
-            { rangeVal: 25, word: "in person", meaning: "직접, 대면으로" },
-            { rangeVal: 25, word: "through", meaning: "~을 통해" },
-            { rangeVal: 25, word: "social media", meaning: "소셜 미디어" },
-            { rangeVal: 25, word: "gap", meaning: "격차, 틈" },
-            { rangeVal: 25, word: "increase", meaning: "증가하다" },
-            // 26번
-            { rangeVal: 26, word: "be born", meaning: "태어나다" },
-            { rangeVal: 26, word: "education", meaning: "교육" },
-            { rangeVal: 26, word: "mathematics", meaning: "수학" },
-            { rangeVal: 26, word: "physics", meaning: "물리학" },
-            { rangeVal: 26, word: "despite", meaning: "~에도 불구하고" },
-            { rangeVal: 26, word: "take over", meaning: "인수하다, 이어받다" },
-            { rangeVal: 26, word: "choose to", meaning: "~하기로 선택하다" },
-            { rangeVal: 26, word: "continue", meaning: "계속하다" },
-            { rangeVal: 26, word: "pursue", meaning: "추구하다" },
-            { rangeVal: 26, word: "academic career", meaning: "학문적 경력, 학자의 길" },
-            { rangeVal: 26, word: "earn a degree", meaning: "학위를 취득하다" },
-            { rangeVal: 26, word: "doctoral degree", meaning: "박사 학위" },
-            { rangeVal: 26, word: "famous for", meaning: "~로 유명한" },
-            { rangeVal: 26, word: "research on", meaning: "~에 대한 연구" },
-            { rangeVal: 26, word: "universe", meaning: "우주" },
-            { rangeVal: 26, word: "support", meaning: "지지하다, 지원하다" },
-            { rangeVal: 26, word: "theory", meaning: "이론" },
-            { rangeVal: 26, word: "argue", meaning: "주장하다" },
-            { rangeVal: 26, word: "however", meaning: "그러나" },
-            { rangeVal: 26, word: "evidence", meaning: "증거" },
-            { rangeVal: 26, word: "against", meaning: "~에 반대하여" },
-            { rangeVal: 26, word: "appear", meaning: "나타나다, ~인 것 같다" },
-            { rangeVal: 26, word: "accept", meaning: "받아들이다" },
-            { rangeVal: 26, word: "model", meaning: "모델, 모형" },
-            { rangeVal: 26, word: "award", meaning: "수여하다, 상" },
-            { rangeVal: 26, word: "outstanding", meaning: "뛰어난, 걸출한" },
-            { rangeVal: 26, word: "contribution to", meaning: "~에 대한 기여" },
-            { rangeVal: 26, word: "experimental", meaning: "실험적인" },
-            { rangeVal: 26, word: "institute", meaning: "연구소, 기관" },
-            { rangeVal: 26, word: "as", meaning: "~로서" },
-            { rangeVal: 26, word: "mentor", meaning: "멘토, 지도자" },
-            { rangeVal: 26, word: "known", meaning: "알려진" },
-            { rangeVal: 26, word: "academic circle", meaning: "학계" },
-            { rangeVal: 26, word: "introduce", meaning: "소개하다, 도입하다" },
-            { rangeVal: 26, word: "audience", meaning: "청중, 관객" },
-            // 27번
-            { rangeVal: 27, word: "farming", meaning: "농업, 농사" },
-            { rangeVal: 27, word: "run", meaning: "운영하다, 달리다" },
-            { rangeVal: 27, word: "smart farm", meaning: "스마트 팜" },
-            { rangeVal: 27, word: "temperature", meaning: "온도" },
-            { rangeVal: 27, word: "drone", meaning: "드론" },
-            { rangeVal: 27, word: "participant", meaning: "참가자" },
-            { rangeVal: 27, word: "attend", meaning: "참석하다" },
-            { rangeVal: 27, word: "workshop", meaning: "워크숍" },
-            { rangeVal: 27, word: "journal", meaning: "일지, 저널" },
-            { rangeVal: 27, word: "track", meaning: "추적하다" },
-            { rangeVal: 27, word: "crop", meaning: "농작물" },
-            { rangeVal: 27, word: "growth", meaning: "성장" },
-            { rangeVal: 27, word: "participate in", meaning: "~에 참여하다" },
-            { rangeVal: 27, word: "monthly", meaning: "매월의" },
-            { rangeVal: 27, word: "mentoring", meaning: "멘토링" },
-            { rangeVal: 27, word: "session", meaning: "시간, 회기" },
-            { rangeVal: 27, word: "submit", meaning: "제출하다" },
-            { rangeVal: 27, word: "benefit", meaning: "혜택, 이익" },
-            { rangeVal: 27, word: "agricultural", meaning: "농업의" },
-            { rangeVal: 27, word: "registration", meaning: "등록" },
-            { rangeVal: 27, word: "free of charge", meaning: "무료" },
-            { rangeVal: 27, word: "apply", meaning: "지원하다, 적용하다" },
-            { rangeVal: 27, word: "individually", meaning: "개별적으로" },
-            { rangeVal: 27, word: "member", meaning: "회원" },
-            // 28번
-            { rangeVal: 28, word: "log in", meaning: "로그인하다" },
-            { rangeVal: 28, word: "check out", meaning: "대출하다, 확인하다" },
-            { rangeVal: 28, word: "reserve", meaning: "예약하다" },
-            { rangeVal: 28, word: "reservation", meaning: "예약" },
-            { rangeVal: 28, word: "pick up", meaning: "수령하다, 태워주다" },
-            { rangeVal: 28, word: "return", meaning: "반납하다, 돌아오다" },
-            { rangeVal: 28, word: "condition", meaning: "조건, 상태" },
-            { rangeVal: 28, word: "neighbor", meaning: "이웃" },
-            { rangeVal: 28, word: "available", meaning: "이용 가능한" },
-            { rangeVal: 28, word: "household", meaning: "가정의, 세대" },
-            { rangeVal: 28, word: "gear", meaning: "장비, 도구" },
-            { rangeVal: 28, word: "period", meaning: "기간" },
-            { rangeVal: 28, word: "up to", meaning: "최대~까지" },
-            { rangeVal: 28, word: "possible", meaning: "가능한" },
-            { rangeVal: 28, word: "extension", meaning: "연장" },
-            { rangeVal: 28, word: "fee", meaning: "요금" },
-            { rangeVal: 28, word: "free", meaning: "무료의, 자유로운" },
-            { rangeVal: 28, word: "late fee", meaning: "연체료" },
-            { rangeVal: 28, word: "be charged", meaning: "부과되다" },
-            { rangeVal: 28, word: "daily", meaning: "매일" },
-            // 29번
-            { rangeVal: 29, word: "the Industrial Revolution", meaning: "산업 혁명" },
-            { rangeVal: 29, word: "do more than just", meaning: "단지 ~하는 것 이상을 하다" },
-            { rangeVal: 29, word: "invent", meaning: "발명하다" },
-            { rangeVal: 29, word: "material", meaning: "재료, 물질" },
-            { rangeVal: 29, word: "process", meaning: "공정, 과정" },
-            { rangeVal: 29, word: "manufacturing", meaning: "제조업, 제조" },
-            { rangeVal: 29, word: "modern", meaning: "현대의" },
-            { rangeVal: 29, word: "factory", meaning: "공장" },
-            { rangeVal: 29, word: "prior to", meaning: "~ 이전에" },
-            { rangeVal: 29, word: "master", meaning: "장인, 거장" },
-            { rangeVal: 29, word: "builder", meaning: "제작자, 건축가" },
-            { rangeVal: 29, word: "skill", meaning: "기술" },
-            { rangeVal: 29, word: "trade", meaning: "업무, 무역" },
-            { rangeVal: 29, word: "usually", meaning: "보통" },
-            { rangeVal: 29, word: "over the course of", meaning: "~의 과정 동안" },
-            { rangeVal: 29, word: "specialist", meaning: "전문가" },
-            { rangeVal: 29, word: "specialize in", meaning: "~을 전문으로 하다" },
-            { rangeVal: 29, word: "soundboard", meaning: "울림판, 공명판" },
-            { rangeVal: 29, word: "hammer", meaning: "해머, 망치" },
-            { rangeVal: 29, word: "and so on", meaning: "기타 등등" },
-            { rangeVal: 29, word: "maker", meaning: "제작자" },
-            { rangeVal: 29, word: "of that time", meaning: "그 당시의" },
-            { rangeVal: 29, word: "produce", meaning: "생산하다" },
-            { rangeVal: 29, word: "no more than", meaning: "단지 ~에 불과한" },
-            { rangeVal: 29, word: "per", meaning: "~당" },
-            { rangeVal: 29, word: "essentially", meaning: "본질적으로" },
-            { rangeVal: 29, word: "one at a time", meaning: "한 번에 하나씩" },
-            { rangeVal: 29, word: "occur", meaning: "발생하다" },
-            { rangeVal: 29, word: "lead", meaning: "이끌다" },
-            { rangeVal: 29, word: "later", meaning: "나중에" },
-            { rangeVal: 29, word: "lead to", meaning: "~로 이어지다" },
-            { rangeVal: 29, word: "improvement", meaning: "향상, 개선" },
-            { rangeVal: 29, word: "both A and B", meaning: "A와 B 둘다" },
-            { rangeVal: 29, word: "efficiency", meaning: "효율성" },
-            { rangeVal: 29, word: "quality", meaning: "품질" },
-            { rangeVal: 29, word: "iron", meaning: "철, 다리미" },
-            { rangeVal: 29, word: "casting", meaning: "주조" },
-            { rangeVal: 29, word: "facility", meaning: "시설" },
-            { rangeVal: 29, word: "plate", meaning: "판, 접시" },
-            { rangeVal: 29, word: "best", meaning: "최선의, 최고의" },
-            { rangeVal: 29, word: "available", meaning: "이용 가능한" },
-            { rangeVal: 29, word: "apprentice", meaning: "견습공, 도제" },
-            // 30번
-            { rangeVal: 30, word: "doctoral", meaning: "박사의" },
-            { rangeVal: 30, word: "programme", meaning: "프로그램, 과정" },
-            { rangeVal: 30, word: "typically", meaning: "일반적으로, 전형적으로" },
-            { rangeVal: 30, word: "significant", meaning: "상당한, 중요한" },
-            { rangeVal: 30, word: "effort", meaning: "노력" },
-            { rangeVal: 30, word: "research", meaning: "연구" },
-            { rangeVal: 30, word: "specific", meaning: "특정의, 구체적인" },
-            { rangeVal: 30, word: "topic", meaning: "주제" },
-            { rangeVal: 30, word: "deep", meaning: "깊은" },
-            { rangeVal: 30, word: "dive into", meaning: "~에 깊이 파고들다" },
-            { rangeVal: 30, word: "allow for", meaning: "~을 가능하게 하다" },
-            { rangeVal: 30, word: "thorough", meaning: "철저한" },
-            { rangeVal: 30, word: "exploration", meaning: "탐구, 탐사" },
-            { rangeVal: 30, word: "result in", meaning: "그 결과 ~이 되다" },
-            { rangeVal: 30, word: "narrow", meaning: "좁은, 한정된" },
-            { rangeVal: 30, word: "focus", meaning: "초점" },
-            { rangeVal: 30, word: "deeply", meaning: "깊게" },
-            { rangeVal: 30, word: "absorbed in", meaning: "~에 몰두한" },
-            { rangeVal: 30, word: "explore", meaning: "탐구하다" },
-            { rangeVal: 30, word: "related", meaning: "관련된" },
-            { rangeVal: 30, word: "field", meaning: "분야" },
-            { rangeVal: 30, word: "acquire", meaning: "습득하다, 얻다" },
-            { rangeVal: 30, word: "skill", meaning: "기술" },
-            { rangeVal: 30, word: "outside", meaning: "외부의" },
-            { rangeVal: 30, word: "immediate", meaning: "직접적인, 즉각적인" },
-            { rangeVal: 30, word: "consequently", meaning: "결과적으로" },
-            { rangeVal: 30, word: "singular", meaning: "단일의, 뛰어난" },
-            { rangeVal: 30, word: "limit", meaning: "제한하다, 한계" },
-            { rangeVal: 30, word: "breadth", meaning: "폭, 광범위함" },
-            { rangeVal: 30, word: "potentially", meaning: "잠재적으로" },
-            { rangeVal: 30, word: "hinder", meaning: "방해하다" },
-            { rangeVal: 30, word: "adapt to", meaning: "~에 적응하다" },
-            { rangeVal: 30, word: "diverse", meaning: "다양한" },
-            { rangeVal: 30, word: "career path", meaning: "진로, 커리어 경로" },
-            { rangeVal: 30, word: "address", meaning: "다루다, 주소" },
-            { rangeVal: 30, word: "interdisciplinary", meaning: "학제간의(여러 학문 분야에 걸친)" },
-            { rangeVal: 30, word: "challenge", meaning: "난제, 도전" },
-            { rangeVal: 30, word: "recognise", meaning: "인식하다, 인정하다" },
-            { rangeVal: 30, word: "limitation", meaning: "한계, 제한" },
-            { rangeVal: 30, word: "traditional", meaning: "전통적인" },
-            { rangeVal: 30, word: "implement", meaning: "시행하다, 도구" },
-            { rangeVal: 30, word: "structured", meaning: "구조화된" },
-            { rangeVal: 30, word: "approach", meaning: "접근법" },
-            { rangeVal: 30, word: "combine", meaning: "결합하다" },
-            { rangeVal: 30, word: "coursework", meaning: "교육과정, 수업 이수" },
-            { rangeVal: 30, word: "transferable", meaning: "이전 가능한, 전이 가능한" },
-            { rangeVal: 30, word: "incorporate", meaning: "포함하다, 통합하다" },
-            { rangeVal: 30, word: "seminar", meaning: "세미나" },
-            { rangeVal: 30, word: "workshop", meaning: "워크숍" },
-            { rangeVal: 30, word: "internship", meaning: "인턴십" },
-            { rangeVal: 30, word: "curriculum", meaning: "교육과정" },
-            { rangeVal: 30, word: "aim to", meaning: "~을 목표로 하다" },
-            { rangeVal: 30, word: "broad", meaning: "넓은" },
-            { rangeVal: 30, word: "set", meaning: "세트, 집합" },
-            { rangeVal: 30, word: "prepare", meaning: "준비하다" },
-            { rangeVal: 30, word: "a variety of", meaning: "다양한" },
-            { rangeVal: 30, word: "beyond", meaning: "~을 넘어서" },
-            { rangeVal: 30, word: "academia", meaning: "학계" },
-            { rangeVal: 30, word: "thesis-based", meaning: "논문 기반의" },
-            // 31번
-            { rangeVal: 31, word: "imaginary", meaning: "상상 속의" },
-            { rangeVal: 31, word: "come to life", meaning: "생기를 얻다, 살아나다" },
-            { rangeVal: 31, word: "especially", meaning: "특히" },
-            { rangeVal: 31, word: "with respect to", meaning: "~에 관하여" },
-            { rangeVal: 31, word: "everyday", meaning: "일상의" },
-            { rangeVal: 31, word: "even though", meaning: "비록 ~일지라도" },
-            { rangeVal: 31, word: "monster", meaning: "괴물" },
-            { rangeVal: 31, word: "refuse to", meaning: "~하기를 거부하다" },
-            { rangeVal: 31, word: "indeed", meaning: "정말로, 사실은" },
-            { rangeVal: 31, word: "display", meaning: "보여주다, 전시" },
-            { rangeVal: 31, word: "pretend", meaning: "~인 척하다" },
-            { rangeVal: 31, word: "scary", meaning: "무서운" },
-            { rangeVal: 31, word: "leave alone", meaning: "혼자 내버려 두다" },
-            { rangeVal: 31, word: "fear of", meaning: "~에 대한 공포" },
-            { rangeVal: 31, word: "avoidance of", meaning: "~에 대한 회피" },
-            // 32번
-            { rangeVal: 32, word: "perhaps", meaning: "아마도" },
-            { rangeVal: 32, word: "best-known", meaning: "가장 잘 알려진" },
-            { rangeVal: 32, word: "emerge", meaning: "나타나다, 출현하다" },
-            { rangeVal: 32, word: "liberation", meaning: "해방" },
-            { rangeVal: 32, word: "expansion", meaning: "확장" },
-            { rangeVal: 32, word: "aesthetic", meaning: "미학적인, 미적인" },
-            { rangeVal: 32, word: "recognize", meaning: "인식하다" },
-            { rangeVal: 32, word: "degrade", meaning: "비하하다, 저하시키다" },
-            { rangeVal: 32, word: "prevalent", meaning: "일반적인, 만연한" },
-            { rangeVal: 32, word: "value", meaning: "가치 있게 여기다, 가치" },
-            { rangeVal: 32, word: "internalize", meaning: "내면화하다" },
-            { rangeVal: 32, word: "gratification", meaning: "만족, 희열" },
-            { rangeVal: 32, word: "interpenetration", meaning: "상호 침투" },
-            // 33번
-            { rangeVal: 33, word: "validly", meaning: "타당하게" },
-            { rangeVal: 33, word: "morally", meaning: "도덕적으로" },
-            { rangeVal: 33, word: "superior", meaning: "우월한" },
-            { rangeVal: 33, word: "possess", meaning: "소유하다" },
-            { rangeVal: 33, word: "moral agent", meaning: "도덕적 행위자" },
-            { rangeVal: 33, word: "deficiency", meaning: "결함, 부족" },
-            { rangeVal: 33, word: "determine", meaning: "결정하다" },
-            { rangeVal: 33, word: "correctly", meaning: "올바르게" },
-            { rangeVal: 33, word: "fulfill", meaning: "충족시키다, 이행하다" },
-            { rangeVal: 33, word: "to a degree", meaning: "어느 정도까지" },
-            { rangeVal: 33, word: "fall within", meaning: "~의 범위에 들어가다" },
-            // 34번
-            { rangeVal: 34, word: "artificial", meaning: "인공적인" },
-            { rangeVal: 34, word: "pause", meaning: "멈춤, 휴지" },
-            { rangeVal: 34, word: "filler", meaning: "필러(대화 빈틈을 메우는 말)" },
-            { rangeVal: 34, word: "supplement for", meaning: "~에 대한 보충" },
-            { rangeVal: 34, word: "natural-sounding", meaning: "자연스럽게 들리는" },
-            { rangeVal: 34, word: "convince", meaning: "확신시키다" },
-            { rangeVal: 34, word: "illusion", meaning: "환상, 착각" },
-            { rangeVal: 34, word: "technical", meaning: "기술적인" },
-            { rangeVal: 34, word: "handling", meaning: "처리" },
-            { rangeVal: 34, word: "duration", meaning: "지속 시간" },
-            { rangeVal: 34, word: "inference", meaning: "추론" },
-            { rangeVal: 34, word: "conversational", meaning: "대화의" },
-            // 35번
-            { rangeVal: 35, word: "standardization", meaning: "표준화" },
-            { rangeVal: 35, word: "reproduction", meaning: "복제, 재생산" },
-            { rangeVal: 35, word: "contrast", meaning: "대조" },
-            { rangeVal: 35, word: "authentic", meaning: "진짜의, 정확한" },
-            { rangeVal: 35, word: "certainty", meaning: "확실성" },
-            { rangeVal: 35, word: "accuracy", meaning: "정확성" },
-            { rangeVal: 35, word: "manuscript", meaning: "필사본, 원고" },
-            // 36번
-            { rangeVal: 36, word: "cultivate", meaning: "경작하다, 재배하다" },
-            { rangeVal: 36, word: "innovation", meaning: "혁신" },
-            { rangeVal: 36, word: "productivity", meaning: "생산성" },
-            { rangeVal: 36, word: "manual labor", meaning: "육체노동, 수작업" },
-            { rangeVal: 36, word: "billion", meaning: "10억" },
-            { rangeVal: 36, word: "suitable", meaning: "적합한" },
-            { rangeVal: 36, word: "ownership", meaning: "소유권" },
-            { rangeVal: 36, word: "soil quality", meaning: "토양 질" },
-            // 37번
-            { rangeVal: 37, word: "confident", meaning: "자신감 있는" },
-            { rangeVal: 37, word: "terminology", meaning: "전문 용어" },
-            { rangeVal: 37, word: "brother-in-law", meaning: "매형, 처남, 형부, 제부" },
-            { rangeVal: 37, word: "cousin", meaning: "사촌" },
-            { rangeVal: 37, word: "kinship", meaning: "친족 관계" },
-            { rangeVal: 37, word: "probability", meaning: "확률, 가능성" },
-            // 38번
-            { rangeVal: 38, word: "fictional", meaning: "허구의, 소설의" },
-            { rangeVal: 38, word: "emit", meaning: "방출하다, 발하다" },
-            { rangeVal: 38, word: "sufficient", meaning: "충분한" },
-            { rangeVal: 38, word: "common ground", meaning: "공통된 기반, 공감대" },
-            { rangeVal: 38, word: "make-believe", meaning: "가장, 가짜의" },
-            { rangeVal: 38, word: "gasp", meaning: "숨이 막히다" },
-            // 39번
-            { rangeVal: 39, word: "uniformly", meaning: "균일하게" },
-            { rangeVal: 39, word: "solid", meaning: "고체" },
-            { rangeVal: 39, word: "liquid", meaning: "액체" },
-            { rangeVal: 39, word: "gas", meaning: "기체" },
-            { rangeVal: 39, word: "intuitively", meaning: "직관적으로" },
-            { rangeVal: 39, word: "planetary", meaning: "행성의" },
-            { rangeVal: 39, word: "overlie", meaning: "위에 가로놓이다" },
-            // 40번
-            { rangeVal: 40, word: "self-experimentation", meaning: "자가 실험" },
-            { rangeVal: 40, word: "conventional", meaning: "관습적인, 전통적인" },
-            { rangeVal: 40, word: "hypothesis", meaning: "가설" },
-            { rangeVal: 40, word: "exploratory", meaning: "탐색적인" },
-            { rangeVal: 40, word: "procedural", meaning: "절차상의" },
-            { rangeVal: 40, word: "optimize", meaning: "최적화하다" }
-        ];
+  <!-- [숨겨진 버퍼] html2pdf 전용 인쇄용 격리 컨테이너 (스크롤 버그 원천 해결) -->
+  <div id="pdf-buffer-container">
+    <div id="pdf-paper-1" style="width: 180mm; background: white; padding: 2mm 0mm; box-sizing: border-box;">
+      <!-- 학생 시험지 페이지 -->
+    </div>
+    <div id="pdf-paper-2" style="width: 180mm; background: white; padding: 2mm 0mm; box-sizing: border-box; page-break-before: always;">
+      <!-- 교사용 정답지 페이지 -->
+    </div>
+  </div>
 
-        // App State
-        let wordsData = [...defaultDatabase]; 
-        let activeMode = 'ENG'; // 'ENG', 'KOR', 'SHUFFLE'
-        let selectedQuestions = [];
-        let excelHeaders = []; // Store raw excel headers for dynamic selection
 
-        // DOM elements
-        const dropzone = document.getElementById('dropzone');
-        const fileInput = document.getElementById('fileInput');
-        const fileInfoBox = document.getElementById('fileInfoBox');
-        const loadedFileName = document.getElementById('loadedFileName');
-        const loadedFileDetails = document.getElementById('loadedFileDetails');
-        const btnRemoveFile = document.getElementById('btnRemoveFile');
-        const itemCountRange = document.getElementById('itemCountRange');
-        const itemCountDisplay = document.getElementById('itemCountDisplay');
-        const previewLed = document.getElementById('previewLed');
-        const previewCount = document.getElementById('previewCount');
-        const a4MiniPreview = document.getElementById('a4-mini-preview');
-        const btnPrint = document.getElementById('btnPrint');
+  <!-- 자바스크립트 소스 마운트 -->
+  <script>
+    /************************************************************************
+     * [MANDATORY] 0. Gemini API Key 초기 설정 및 연동 필수 규칙 적용
+     ************************************************************************/
+    const apiKey = ""; // 런타임 환경에서 주입되는 최우선 API 키
 
-        // Range Filter Elements
-        const useRangeFilter = document.getElementById('useRangeFilter');
-        const rangeInputGroup = document.getElementById('rangeInputGroup');
-        const columnSelectGroup = document.getElementById('columnSelectGroup');
-        const rangeColumnSelect = document.getElementById('rangeColumnSelect');
-        const rangeStart = document.getElementById('rangeStart');
-        const rangeEnd = document.getElementById('rangeEnd');
-        const rangeDetectStatus = document.getElementById('rangeDetectStatus');
+    // 네트워크 감지 및 AI 활성화 체크
+    function updateAIStatus() {
+      const badge = document.getElementById('ai-status-badge');
+      const isOnline = navigator.onLine;
+      
+      if (isOnline) {
+        badge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold transition-all";
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+          <span>AI 온라인 모드</span>
+        `;
+      } else {
+        badge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 text-xs font-bold transition-all";
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+          <span>AI 로컬-오프라인 모드</span>
+        `;
+      }
+    }
+    
+    window.addEventListener('online', updateAIStatus);
+    window.addEventListener('offline', updateAIStatus);
 
-        window.addEventListener('DOMContentLoaded', () => {
-            const defaultFileName = "위너스 복사본 복사본.xlsx";
-            
-            // Try fetching default file if in space, otherwise fallback gracefully
-            fetch(encodeURIComponent(defaultFileName))
-                .then(res => {
-                    if (!res.ok) throw new Error("Auto file not found");
-                    return res.arrayBuffer();
-                })
-                .then(buffer => {
-                    const data = new Uint8Array(buffer);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    const rawData = XLSX.utils.sheet_to_json(worksheet);
-                    processRawJSON(rawData, defaultFileName);
-                    showToast("기본 단어장 파일을 자동으로 연동했습니다!", "success");
-                })
-                .catch(err => {
-                    setupDefaultEmbeddedData();
-                });
-        });
+    // API Key 보안 토글 조작
+    function toggleKeyVisibility() {
+      const keyInput = document.getElementById('user-api-key');
+      const icon = document.getElementById('key-visibility-icon');
+      if (keyInput.type === 'password') {
+        keyInput.type = 'text';
+        icon.className = "fa-solid fa-eye-slash";
+      } else {
+        keyInput.type = 'password';
+        icon.className = "fa-solid fa-eye";
+      }
+    }
 
-        function setupDefaultEmbeddedData() {
-            wordsData = [...defaultDatabase];
-            rangeColumnSelect.innerHTML = '<option value="embedded">지문 번호 (Winners_11-30_영단어 데이터)</option>';
-            rangeColumnSelect.value = "embedded";
-            
-            rangeStart.min = 18;
-            rangeStart.max = 40;
-            rangeEnd.min = 18;
-            rangeEnd.max = 40;
-            
-            rangeStart.value = 18;
-            rangeEnd.value = 20;
+    // 활성화할 유효 API Key 식별 반환
+    function getActiveApiKey() {
+      const userKey = document.getElementById('user-api-key').value.trim();
+      return userKey || apiKey || localStorage.getItem('gemini_user_api_key') || "";
+    }
 
-            rangeDetectStatus.innerText = "기본 기출 범위 활성화 (18~40번)";
-            loadedFileName.innerText = "기본 제공 기출 단어장 (18~40번)";
-            loadedFileDetails.innerText = `전체 단어: ${wordsData.length}개`;
-            
-            previewLed.classList.replace('bg-slate-300', 'bg-emerald-500');
-            updateAppLayout();
+    // 유저가 임의 입력한 API Key 임시 저장 보관
+    document.getElementById('user-api-key').addEventListener('input', function() {
+      localStorage.setItem('gemini_user_api_key', this.value.trim());
+    });
+
+    // 로컬스토리지 저장 키 로드
+    const savedKey = localStorage.getItem('gemini_user_api_key');
+    if (savedKey) {
+      document.getElementById('user-api-key').value = savedKey;
+    }
+
+    /************************************************************************
+     * 1. 범용 프리셋 데이터셋 구성
+     ************************************************************************/
+    const SUBJECT_PRESETS = {
+      // 1) 영어 단어-뜻
+      english: {
+        title: "수능 및 학평 고성능 어휘 평가",
+        labelCol1: "영어 단어",
+        labelCol2: "한글 뜻",
+        data: [
+          { num: 1, key: "appreciate", value: "감사하다, 가치를 인정하다" },
+          { num: 2, key: "continued", value: "지속적인, 계속된" },
+          { num: 3, key: "previously", value: "이전에, 미리" },
+          { num: 4, key: "announce", value: "발표하다, 알리다" },
+          { num: 5, key: "conduct", value: "수행하다, 실시하다" },
+          { num: 6, key: "essential", value: "필수적인, 중요한" },
+          { num: 7, key: "maintenance", value: "유지보수, 정비" },
+          { num: 8, key: "underground", value: "지하의" },
+          { num: 9, key: "parking lot", value: "주차장" },
+          { num: 10, key: "as a result", value: "그 결과로" },
+          { num: 11, key: "facility", value: "시설, 설비" },
+          { num: 12, key: "unavailable", value: "이용 불가능한" },
+          { num: 13, key: "temporary", value: "일시적인, 임시의" },
+          { num: 14, key: "outdoor", value: "야외의" },
+          { num: 15, key: "across from", value: "맞은편에" },
+          { num: 16, key: "main entrance", value: "정문, 주 출입구" },
+          { num: 17, key: "gaze", value: "바라보다, 응시하다" },
+          { num: 18, key: "nervously", value: "초조하게, 두려워하며" },
+          { num: 19, key: "shiver", value: "몸을 떨다, 전율하다" },
+          { num: 20, key: "comforting", value: "위로가 되는, 안심시키는" },
+          { num: 21, key: "relieved", value: "안도한, 안심한" },
+          { num: 22, key: "perspective", value: "관점, 시각" },
+          { num: 23, key: "examine", value: "조사하다, 검토하다" },
+          { num: 24, key: "assumption", value: "가정, 추정" },
+          { num: 25, key: "overcome", value: "극복하다, 이겨내다" },
+          { num: 26, key: "diverse", value: "다양한, 다채로운" },
+          { num: 27, key: "empathy", value: "공감, 감정이입" },
+          { num: 28, key: "academic", value: "학문적인, 학업의" },
+          { num: 29, key: "achievement", value: "성취, 업적" },
+          { num: 30, key: "motivation", value: "동기부여, 자극" }
+        ]
+      },
+      // 2) 한국사 사건-연도
+      history: {
+        title: "한국 근현대사 핵심 연도 시험",
+        labelCol1: "역사적 사건",
+        labelCol2: "일어난 연도 (년도)",
+        data: [
+          { num: 1, key: "강화도 조약 체결", value: "1876" },
+          { num: 2, key: "임오군란 발생", value: "1882" },
+          { num: 3, key: "갑신정변 발발", value: "1884" },
+          { num: 4, key: "동학 농민 운동 / 갑오개혁", value: "1894" },
+          { num: 5, key: "을미사변 / 을미개혁", value: "1895" },
+          { num: 6, key: "대한제국 수립 선포", value: "1897" },
+          { num: 7, key: "을사늑약 체결 (외교권 박탈)", value: "1905" },
+          { num: 8, key: "국채보상운동 시작", value: "1907" },
+          { num: 9, key: "경술국치 (일제강점기 시작)", value: "1910" },
+          { num: 10, key: "3·1 운동 / 대한민국 임시정부 수립", value: "1919" },
+          { num: 11, key: "청산리 대첩 승리", value: "1920" },
+          { num: 12, key: "6·10 만세 운동", value: "1926" },
+          { num: 13, key: "광주 학생 항일 운동", value: "1929" },
+          { num: 14, key: "광복 (8·15)", value: "1945" },
+          { num: 15, key: "제주 4·3 사건 발생", value: "1948" },
+          { num: 16, key: "대한민국 정부 수립", value: "1948" },
+          { num: 17, key: "6·25 전쟁 발발", value: "1950" },
+          { num: 18, key: "4·19 혁명 발발", value: "1960" },
+          { num: 19, key: "5·16 군사정변 발생", value: "1961" },
+          { num: 20, key: "7·4 남북 공동 성명", value: "1972" },
+          { num: 21, key: "5·18 민주화 운동", value: "1980" },
+          { num: 22, key: "6월 민주 항쟁 (6·29 선언)", value: "1987" },
+          { num: 23, key: "최초의 남북정상회담 개최", value: "2000" }
+        ]
+      },
+      // 3) 과학 핵심용어
+      science: {
+        title: "기초 과학 필수 개념 및 용어 평가",
+        labelCol1: "학술 용어",
+        labelCol2: "개념 및 정의",
+        data: [
+          { num: 1, key: "광합성", value: "빛에너지를 이용하여 이산화탄소와 물로 유기물을 합성하는 과정" },
+          { num: 2, key: "원소", value: "화학적 방법으로 더 이상 단순한 물질로 분해할 수 없는 물질의 기본 성분" },
+          { num: 3, key: "관성", value: "물체가 현재의 운동 상태를 계속 유지하려는 성질" },
+          { num: 4, key: "초전도 현상", value: "특정 임계 온도 이하에서 전기 저항이 완벽히 0이 되는 현상" },
+          { num: 5, key: "산화", value: "화학 반응에서 어떤 물질이 산소를 얻거나 전자를 잃는 반응" },
+          { num: 6, key: "환원", value: "화학 반응에서 어떤 물질이 산소를 잃거나 전자를 얻는 반응" },
+          { num: 7, key: "상대성 이론", value: "아인슈타인이 주창한 시공간의 상대성을 다루는 물리 법칙" },
+          { num: 8, key: "중력", value: "질량을 가진 모든 물체가 서로를 끌어당기는 힘" },
+          { num: 9, key: "미토콘드리아", value: "세포 내 호흡을 담당하며 유기물을 분해하여 ATP를 생산하는 기관" },
+          { num: 10, key: "엔트로피", value: "물리학에서 계의 무질서도나 불확실성을 나타내는 척도" },
+          { num: 11, key: "염색체", value: "유전 물질인 DNA가 단백질과 결합하여 형성된 구조물" },
+          { num: 12, key: "보일의 법칙", value: "온도가 일정할 때 기체의 부피는 압력에 반비례한다는 법칙" }
+        ]
+      },
+      // 4) 세계의 수도
+      capitals: {
+        title: "글로벌 상식 세계 국가별 수도 시험",
+        labelCol1: "세계 국가명",
+        labelCol2: "지정 국가 수도",
+        data: [
+          { num: 1, key: "대한민국", value: "서울" },
+          { num: 2, key: "일본", value: "도쿄" },
+          { num: 3, key: "중국", value: "베이징" },
+          { num: 4, key: "미국", value: "워싱턴 D.C." },
+          { num: 5, key: "영국", value: "런던" },
+          { num: 6, key: "프랑스", value: "파리" },
+          { num: 7, key: "독일", value: "베를린" },
+          { num: 8, key: "이탈리아", value: "로마" },
+          { num: 9, key: "캐나다", value: "오타와" },
+          { num: 10, key: "호주", value: "캔버라" },
+          { num: 11, key: "인도", value: "뉴델리" },
+          { num: 12, key: "브라질", value: "브라질리아" },
+          { num: 13, key: "러시아", value: "모스크바" },
+          { num: 14, key: "스페인", value: "마드리드" },
+          { num: 15, key: "멕시코", value: "멕시코시티" },
+          { num: 16, key: "이집트", value: "카이로" },
+          { num: 17, key: "터키", value: "앙카라" },
+          { num: 18, key: "베트남", value: "하노이" },
+          { num: 19, key: "사우디아라비아", value: "리야드" },
+          { num: 20, key: "몽골", value: "울란바토르" }
+        ]
+      }
+    };
+
+    let ACTIVE_WORDS_DATABASE = [];
+    let currentActiveTab = 'print';
+
+    // 스마트 퀴즈 모음 객체
+    let quizState = {
+      type: '',
+      currentIdx: 0,
+      words: [],
+      score: 0,
+      wrongList: []
+    };
+
+    /************************************************************************
+     * 2. 라이프사이클 이니셜라이징 및 리스너 마운트
+     ************************************************************************/
+    window.onload = function() {
+      // 영어 프리셋 최초 웰컴 로드
+      loadSubjectPreset('english');
+      updateAIStatus();
+
+      // 수치 제어 패널 이벤트 리스너 마운트
+      document.getElementById('range-start').addEventListener('input', triggerRebuild);
+      document.getElementById('range-end').addEventListener('input', triggerRebuild);
+
+      const slider = document.getElementById('question-count-slider');
+      slider.addEventListener('input', function() {
+        document.getElementById('question-count-label').innerText = `${this.value}문항`;
+        triggerRebuild();
+      });
+
+      // 디자인 조율 옵션 리스너
+      document.getElementById('exam-test-type').addEventListener('change', triggerRebuild);
+      document.getElementById('exam-shuffle').addEventListener('change', triggerRebuild);
+      document.getElementById('exam-grid-style').addEventListener('change', triggerRebuild);
+
+      // 파일 업로드 리스너
+      const fileInput = document.getElementById('excel-file-input');
+      fileInput.addEventListener('change', handleExternalFile);
+    };
+
+    // 프리셋 원클릭 전환 모듈
+    function loadSubjectPreset(presetKey) {
+      const p = SUBJECT_PRESETS[presetKey];
+      if (!p) return;
+
+      document.getElementById('custom-test-title').value = p.title;
+      document.getElementById('label-col1').value = p.labelCol1;
+      document.getElementById('label-col2').value = p.labelCol2;
+
+      ACTIVE_WORDS_DATABASE = [...p.data];
+
+      document.getElementById('range-start').value = 1;
+      document.getElementById('range-end').value = p.data.length;
+      
+      const countSlider = document.getElementById('question-count-slider');
+      countSlider.max = p.data.length;
+      countSlider.value = Math.min(25, p.data.length);
+      document.getElementById('question-count-label').innerText = `${countSlider.value}문항`;
+
+      updateControlPanelStatus("내장 프리셋 데이터 활성", p.data.length);
+      triggerRebuild();
+      showToast(`'${p.labelCol1} - ${p.labelCol2}' 샘플 데이터를 가져왔습니다.`);
+    }
+
+    // 컨트롤 상태 정보 표기 갱신
+    function updateControlPanelStatus(statusText, totalCount) {
+      document.getElementById('data-status-label').innerText = statusText;
+      document.getElementById('data-total-count').innerText = `${totalCount}개 감지됨`;
+    }
+
+    // 토스트 알리미 구현 (오프라인/프레임 호환)
+    function showToast(msg, isError = false) {
+      const toast = document.getElementById('toast-notify');
+      const toastMsg = document.getElementById('toast-message');
+      const toastIcon = document.getElementById('toast-icon');
+
+      toastMsg.innerText = msg;
+      if (isError) {
+        toast.className = "fixed bottom-5 right-5 z-50 bg-rose-600 text-white px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 transition-all transform scale-100 duration-300";
+        toastIcon.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+      } else {
+        toast.className = "fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 transition-all transform scale-100 duration-300";
+        toastIcon.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i>`;
+      }
+      toast.classList.remove('hidden');
+
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3500);
+    }
+
+    /************************************************************************
+     * 3. Fisher-Yates 무작위 셔플 (배열의 기하학적 난수화)
+     ************************************************************************/
+    function fisherYatesShuffle(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    /************************************************************************
+     * 4. 범위 추출 및 가변 다차원 필터링
+     ************************************************************************/
+    function getSelectedFilteredWords() {
+      const startNum = parseInt(document.getElementById('range-start').value) || 1;
+      const endNum = parseInt(document.getElementById('range-end').value) || 100;
+      const limitCount = parseInt(document.getElementById('question-count-slider').value) || 25;
+      const isShuffleEnabled = document.getElementById('exam-shuffle').value === 'true';
+
+      let filtered = ACTIVE_WORDS_DATABASE.filter(item => {
+        return item.num >= startNum && item.num <= endNum;
+      });
+
+      if (filtered.length === 0) return [];
+
+      // 셔플이 켜진 경우에만 완전 무작위 뒤섞기 수행
+      if (isShuffleEnabled) {
+        filtered = fisherYatesShuffle(filtered);
+      }
+
+      return filtered.slice(0, limitCount);
+    }
+
+    /************************************************************************
+     * 5. 범용 파일 파서 엔진 (임의 업로드 완벽 분해)
+     ************************************************************************/
+    function handleExternalFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      if (ext === 'csv') {
+        reader.onload = function(evt) {
+          const text = evt.target.result;
+          Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+              processRawFileData(results.data, file.name);
+            }
+          });
+        };
+        reader.readAsText(file, "EUC-KR"); // 한글 깨짐 방지 래퍼
+      } else {
+        reader.onload = function(evt) {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+          processRawFileData(jsonData, file.name);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    }
+
+    function processRawFileData(dataList, filename) {
+      if (!dataList || dataList.length === 0) {
+        showToast("파일 내에 유효한 정보가 존재하지 않습니다.", true);
+        return;
+      }
+
+      const firstRow = dataList[0];
+      const keys = Object.keys(firstRow);
+
+      let keyColumn = keys[0];
+      let valColumn = keys[1] || keys[0];
+      let numColumn = null;
+
+      keys.forEach(k => {
+        const lower = k.toLowerCase().trim();
+        if (lower.includes("영어") || lower.includes("사건") || lower.includes("국가") || lower.includes("용어") || lower.includes("단어") || lower.includes("개념") || lower.includes("word") || lower.includes("key")) {
+          keyColumn = k;
+        }
+        if (lower.includes("뜻") || lower.includes("의미") || lower.includes("연도") || lower.includes("수도") || lower.includes("정의") || lower.includes("meaning") || lower.includes("value") || lower.includes("capital")) {
+          valColumn = k;
+        }
+        if (lower.includes("no") || lower.includes("번호") || lower.includes("순서") || lower.includes("지문") || lower.includes("id")) {
+          numColumn = k;
+        }
+      });
+
+      // 동적 라벨 입력 필드 실시간 업데이트
+      document.getElementById('label-col1').value = keyColumn;
+      document.getElementById('label-col2').value = valColumn;
+
+      const tempDb = [];
+      dataList.forEach((row, index) => {
+        const kVal = String(row[keyColumn] || "").trim();
+        const vVal = String(row[valColumn] || "").trim();
+        let nVal = numColumn ? parseInt(row[numColumn]) : (index + 1);
+
+        if (isNaN(nVal)) nVal = index + 1;
+
+        if (kVal && vVal) {
+          tempDb.push({
+            num: nVal,
+            key: kVal,
+            value: vVal
+          });
+        }
+      });
+
+      if (tempDb.length > 0) {
+        ACTIVE_WORDS_DATABASE = tempDb;
+
+        document.getElementById('file-info-container').classList.remove('hidden');
+        document.getElementById('file-name-label').innerText = filename;
+
+        const minNum = 1;
+        const maxNum = tempDb.length;
+        document.getElementById('range-start').value = minNum;
+        document.getElementById('range-end').value = maxNum;
+
+        const countSlider = document.getElementById('question-count-slider');
+        countSlider.max = maxNum;
+        countSlider.value = Math.min(25, maxNum);
+        document.getElementById('question-count-label').innerText = `${countSlider.value}문항`;
+
+        updateControlPanelStatus("사용자 엑셀 활성", tempDb.length);
+        triggerRebuild();
+        showToast(`성공적으로 표 구조 분석 완료! 총 ${tempDb.length}개 항목 수집.`);
+      } else {
+        showToast("사용 가능한 열(Row)을 발굴해내는 데 실패했습니다.", true);
+      }
+    }
+
+    function resetToPresetData() {
+      document.getElementById('excel-file-input').value = "";
+      document.getElementById('file-info-container').classList.add('hidden');
+      loadSubjectPreset('english');
+    }
+
+    /************************************************************************
+     * 6. 실시간 A4 미리보기 렌더링 스크립트
+     ************************************************************************/
+    function triggerRebuild() {
+      if (currentActiveTab === 'print') {
+        const words = getSelectedFilteredWords();
+        const previewElement = document.getElementById('preview-content');
+
+        if (words.length === 0) {
+          previewElement.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
+              <p class="text-xs font-semibold">범위 구간 내에 출제 가능한 표 데이터가 존재하지 않습니다.</p>
+            </div>
+          `;
+          return;
         }
 
-        // Setup File drag & drop triggers
-        dropzone.addEventListener('click', () => fileInput.click());
+        const title = document.getElementById('custom-test-title').value || "종합 학력 평가";
+        previewElement.innerHTML = buildSinglePaperHTML(words, title, false);
+      }
+    }
 
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                dropzone.classList.add('border-brand-500', 'bg-brand-50/50');
-            }, false);
-        });
+    // A4 최적화 단일 격자 표 HTML 컴파일기
+    function buildSinglePaperHTML(words, paperTitle, isAnswerSheet = false) {
+      const testType = document.getElementById('exam-test-type').value;
+      const gridStyle = document.getElementById('exam-grid-style').value;
+      const col1Name = document.getElementById('label-col1').value || "질문";
+      const col2Name = document.getElementById('label-col2').value || "정답";
 
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('border-brand-500', 'bg-brand-50/50');
-            }, false);
-        });
+      let borderClass = "border border-slate-300";
+      let cellBorderClass = "border border-slate-300";
+      if (gridStyle === 'light') {
+        borderClass = "border border-slate-200";
+        cellBorderClass = "border border-slate-200";
+      } else if (gridStyle === 'minimal') {
+        borderClass = "border-b-2 border-slate-300";
+        cellBorderClass = "border-b border-slate-100";
+      }
 
-        dropzone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files.length) {
-                fileInput.files = files;
-                handleFileSelection(files[0]);
-            }
-        });
+      // 문항수에 따른 반응형 높이 연산 (Auto-Scaling)
+      const count = words.length;
+      let cellPadding = "py-2 px-2";
+      let fontSize = "text-xs";
+      if (count <= 20) {
+        cellPadding = "py-3 px-2";
+        fontSize = "text-sm";
+      } else if (count > 20 && count <= 35) {
+        cellPadding = "py-2 px-2";
+        fontSize = "text-[12px]";
+      } else if (count > 35 && count <= 50) {
+        cellPadding = "py-1.5 px-2";
+        fontSize = "text-[11px]";
+      } else {
+        cellPadding = "py-1 px-1.5";
+        fontSize = "text-[10px]";
+      }
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length) {
-                handleFileSelection(e.target.files[0]);
-            }
-        });
+      // 2단 좌/우 배열 분기 배분
+      const halfLength = Math.ceil(words.length / 2);
+      const leftColList = words.slice(0, halfLength);
+      const rightColList = words.slice(halfLength);
 
-        btnRemoveFile.addEventListener('click', (e) => {
-            e.stopPropagation();
-            resetState();
-        });
+      const infoSectionHTML = `
+        <table class="w-full text-center border-collapse text-[11px] mb-3 font-medium">
+          <tr class="bg-slate-50 text-slate-700">
+            <td class="${cellBorderClass} py-1 w-[16%] font-bold">시험일자</td>
+            <td class="${cellBorderClass} py-1 w-[20%] text-slate-400">2026.    .    .</td>
+            <td class="${cellBorderClass} py-1 w-[12%] font-bold">평가 반</td>
+            <td class="${cellBorderClass} py-1 w-[20%]"></td>
+            <td class="${cellBorderClass} py-1 w-[12%] font-bold">이 름</td>
+            <td class="${cellBorderClass} py-1 w-[20%]"></td>
+          </tr>
+        </table>
+      `;
 
-        itemCountRange.addEventListener('input', (e) => {
-            itemCountDisplay.innerText = `${e.target.value}개` + (e.target.value == '25' ? ' (권장)' : '');
-            updateAppLayout();
-        });
+      let tableRowsHTML = "";
+      for (let i = 0; i < halfLength; i++) {
+        const leftItem = leftColList[i];
+        const leftIdx = i + 1;
 
-        // Range Filter UI Toggle Behavior
-        useRangeFilter.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                rangeInputGroup.classList.remove('hidden');
-                columnSelectGroup.classList.remove('hidden');
+        let leftDisplayKey = leftItem.key;
+        let leftDisplayVal = leftItem.value;
+
+        if (!isAnswerSheet) {
+          if (testType === 'meaning') {
+            leftDisplayVal = "";
+          } else if (testType === 'word') {
+            leftDisplayKey = "";
+          } else if (testType === 'random') {
+            if (leftIdx % 2 === 0) {
+              leftDisplayVal = "";
             } else {
-                rangeInputGroup.classList.add('hidden');
-                columnSelectGroup.classList.add('hidden');
+              leftDisplayKey = "";
             }
-            updateAppLayout();
+          }
+        }
+
+        const rightItem = rightColList[i];
+        const rightIdx = halfLength + i + 1;
+
+        let rightDisplayKey = rightItem ? rightItem.key : "";
+        let rightDisplayVal = rightItem ? rightItem.value : "";
+
+        if (rightItem && !isAnswerSheet) {
+          if (testType === 'meaning') {
+            rightDisplayVal = "";
+          } else if (testType === 'word') {
+            rightDisplayKey = "";
+          } else if (testType === 'random') {
+            if (rightIdx % 2 === 0) {
+              rightDisplayVal = "";
+            } else {
+              rightDisplayKey = "";
+            }
+          }
+        }
+
+        tableRowsHTML += `
+          <tr class="${fontSize}">
+            <!-- 좌측 정교화 격자 -->
+            <td class="${cellBorderClass} ${cellPadding} text-center font-bold text-slate-500 bg-slate-50/50 w-[5%]">${leftIdx}</td>
+            <td class="${cellBorderClass} ${cellPadding} w-[21%] text-left font-semibold ${isAnswerSheet && testType !== 'meaning' && (testType === 'word' || (testType === 'random' && leftIdx % 2 !== 0)) ? 'text-rose-600 bg-rose-50/20' : 'text-slate-800'}">${leftDisplayKey}</td>
+            <td class="${cellBorderClass} ${cellPadding} w-[24%] text-left font-medium ${isAnswerSheet && testType !== 'word' && (testType === 'meaning' || (testType === 'random' && leftIdx % 2 === 0)) ? 'text-rose-600 bg-rose-50/20' : 'text-slate-600'}">${leftDisplayVal}</td>
+            
+            <!-- 단과 단 분할 경계 -->
+            <td class="w-[1%] border-0 bg-white"></td>
+            
+            <!-- 우측 정교화 격자 -->
+            ${rightItem ? `
+              <td class="${cellBorderClass} ${cellPadding} text-center font-bold text-slate-500 bg-slate-50/50 w-[5%]">${rightIdx}</td>
+              <td class="${cellBorderClass} ${cellPadding} w-[21%] text-left font-semibold ${isAnswerSheet && testType !== 'meaning' && (testType === 'word' || (testType === 'random' && rightIdx % 2 !== 0)) ? 'text-rose-600 bg-rose-50/20' : 'text-slate-800'}">${rightDisplayKey}</td>
+              <td class="${cellBorderClass} ${cellPadding} w-[24%] text-left font-medium ${isAnswerSheet && testType !== 'word' && (testType === 'meaning' || (testType === 'random' && rightIdx % 2 === 0)) ? 'text-rose-600 bg-rose-50/20' : 'text-slate-600'}">${rightDisplayVal}</td>
+            ` : `
+              <td class="${cellBorderClass} ${cellPadding} bg-slate-50/20 w-[5%]"></td>
+              <td class="${cellBorderClass} ${cellPadding} w-[21%]"></td>
+              <td class="${cellBorderClass} ${cellPadding} w-[24%]"></td>
+            `}
+          </tr>
+        `;
+      }
+
+      return `
+        <div class="flex flex-col justify-between h-full bg-white text-slate-800" style="font-family: 'Noto Sans KR', sans-serif;">
+          <div>
+            <div class="text-center mb-4">
+              <h1 class="text-base sm:text-xl font-black text-slate-900 tracking-wide border-b-2 border-indigo-600 pb-1.5 uppercase">
+                ${paperTitle}
+              </h1>
+              <div class="flex justify-between items-center text-[9px] text-indigo-700 font-bold mt-1 px-1">
+                <span>범용 1:1대응 스마트 암기 시험 시스템</span>
+                <span>출제 번호 대역: No ${document.getElementById('range-start').value} ~ ${document.getElementById('range-end').value}</span>
+              </div>
+            </div>
+
+            ${infoSectionHTML}
+
+            <table class="w-full border-collapse ${borderClass} table-fixed">
+              <thead>
+                <tr class="bg-indigo-600 text-white font-bold ${fontSize}">
+                  <th class="${cellBorderClass} ${cellPadding} w-[5%]">No</th>
+                  <th class="${cellBorderClass} ${cellPadding} w-[21%] text-left">${col1Name}</th>
+                  <th class="${cellBorderClass} ${cellPadding} w-[24%] text-left">${col2Name}</th>
+                  <th class="w-[1%] bg-white border-0"></th>
+                  <th class="${cellBorderClass} ${cellPadding} w-[5%]">No</th>
+                  <th class="${cellBorderClass} ${cellPadding} w-[21%] text-left">${col1Name}</th>
+                  <th class="${cellBorderClass} ${cellPadding} w-[24%] text-left">${col2Name}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRowsHTML}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="border-t border-slate-100 pt-2 flex justify-between items-center text-[9px] text-slate-400 font-bold">
+            <span>범용 1:1대응 암기 표 생성기 Ver 2.5</span>
+            <span>배움은 스스로를 넓히는 가장 정직한 수단이다.</span>
+          </div>
+        </div>
+      `;
+    }
+
+    /************************************************************************
+     * 7. 스크롤 간섭 오프셋 완벽 우회 및 고성능 PDF 빌드 (html2pdf)
+     ************************************************************************/
+    function downloadPerfectPDF() {
+      const words = getSelectedFilteredWords();
+      if (words.length === 0) {
+        showToast("범위 내에 출제할 데이터가 없어 PDF를 빌드할 수 없습니다.", true);
+        return;
+      }
+
+      showToast("PDF 컴파일 진행 중... 약 2~3초가 소요됩니다.");
+
+      const title = document.getElementById('custom-test-title').value || "종합 학력 평가";
+      const studentPaper = document.getElementById('pdf-paper-1');
+      const teacherPaper = document.getElementById('pdf-paper-2');
+
+      studentPaper.innerHTML = buildSinglePaperHTML(words, title, false);
+      teacherPaper.innerHTML = buildSinglePaperHTML(words, `${title} (교사 모범 답안)`, true);
+
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${title.replace(/\s+/g, '_')}_시험지.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          scrollY: 0,
+          scrollX: 0
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const element = document.getElementById('pdf-buffer-container');
+
+      html2pdf().from(element).set(opt).save().then(() => {
+        showToast("PDF 시험지 저장 성공! 다운로드 보관함을 확인하세요.");
+      }).catch(err => {
+        console.error(err);
+        showToast("PDF 캡처 가공 처리 중 에러가 유출되었습니다.", true);
+      });
+    }
+
+    /************************************************************************
+     * 8. 글로벌 탭 제어 전환기
+     ************************************************************************/
+    function switchTab(tabId) {
+      currentActiveTab = tabId;
+      const printBtn = document.getElementById('tab-print-btn');
+      const quizBtn = document.getElementById('tab-quiz-btn');
+      const panelPrint = document.getElementById('panel-print');
+      const panelQuiz = document.getElementById('panel-quiz');
+
+      if (tabId === 'print') {
+        printBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center gap-2";
+        quizBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-950 transition-all flex items-center gap-2";
+        panelPrint.classList.remove('hidden');
+        panelQuiz.classList.add('hidden');
+        triggerRebuild();
+      } else {
+        quizBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center gap-2";
+        printBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg text-slate-600 hover:text-slate-950 transition-all flex items-center gap-2";
+        panelPrint.classList.add('hidden');
+        panelQuiz.classList.remove('hidden');
+        resetQuizWorkspace();
+      }
+    }
+
+    function resetQuizWorkspace() {
+      const col1Name = document.getElementById('label-col1').value || "질문";
+      const col2Name = document.getElementById('label-col2').value || "정답";
+
+      document.getElementById('quiz-workspace').innerHTML = `
+        <div class="max-w-md space-y-4">
+          <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-inner">
+            <i class="fa-solid fa-graduation-cap"></i>
+          </div>
+          <h3 class="text-lg font-bold text-slate-950">스마트 실시간 자가 시험 센터</h3>
+          <p class="text-xs text-slate-500 leading-relaxed">
+            현재 로드되어 있는 <strong>[${col1Name} - ${col2Name}]</strong> 구성의 자가 퀴즈를 제공합니다.<br>
+            상단 버튼을 눌러 원하는 퀴즈 타입을 고르시면 즉시 학습이 개시됩니다.
+          </p>
+        </div>
+      `;
+    }
+
+    /************************************************************************
+     * 9. 인터렉티브 온라인 퀴즈 모듈 (완벽 오프라인 연산 채점)
+     ************************************************************************/
+    function startQuiz(type) {
+      const sourceList = getSelectedFilteredWords();
+      if (sourceList.length === 0) {
+        showToast("자가 시험을 구동할 수 있는 단어 범위 개수가 모자랍니다.", true);
+        return;
+      }
+
+      quizState.type = type;
+      quizState.words = fisherYatesShuffle(sourceList); // 진정한 셔플 보완 작동
+      quizState.currentIdx = 0;
+      quizState.score = 0;
+      quizState.wrongList = [];
+
+      runQuizCycle();
+    }
+
+    function runQuizCycle() {
+      const workspace = document.getElementById('quiz-workspace');
+      const total = quizState.words.length;
+
+      if (quizState.currentIdx >= total) {
+        renderQuizResult();
+        return;
+      }
+
+      const currentItem = quizState.words[quizState.currentIdx];
+      const col1Name = document.getElementById('label-col1').value || "질문";
+      const col2Name = document.getElementById('label-col2').value || "정답";
+
+      const progressHTML = `
+        <div class="w-full max-w-lg mb-6">
+          <div class="flex justify-between text-xs font-bold text-slate-500 mb-2">
+            <span>모드: ${quizState.type === 'flashcard' ? '🃏 플래시 카드' : quizState.type === 'multiple' ? '🎯 4지선다형' : '📝 주관식'}</span>
+            <span>진척률: ${quizState.currentIdx + 1} / ${total}</span>
+          </div>
+          <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+            <div class="bg-indigo-600 h-full rounded-full transition-all" style="width: ${((quizState.currentIdx + 1) / total) * 100}%"></div>
+          </div>
+        </div>
+      `;
+
+      // AI 힌트 연동 버튼 (온라인 상태에서만 노출 가능)
+      const aiHintBtnHTML = navigator.onLine ? `
+        <button id="ai-hint-btn" onclick="askAiForHint('${currentItem.key.replace(/'/g, "\\'")}', '${currentItem.value.replace(/'/g, "\\'")}')" class="mt-4 inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> AI 연상 힌트 보기
+        </button>
+        <div id="ai-hint-box" class="hidden mt-3 text-left bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs leading-relaxed text-slate-600 max-w-lg w-full">
+          <!-- 힌트 실시간 주입 -->
+        </div>
+      ` : '';
+
+      if (quizState.type === 'flashcard') {
+        workspace.innerHTML = `
+          ${progressHTML}
+          <div class="w-full max-w-lg bg-slate-50 border border-slate-200 p-8 rounded-2xl flex flex-col justify-center min-h-[220px] mb-6 cursor-pointer relative group transition-all transform hover:scale-[1.01]" onclick="flipFlashCard()">
+            <div id="flash-card-front" class="space-y-4">
+              <span class="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">${col1Name}</span>
+              <h3 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-normal">${currentItem.key}</h3>
+              <p class="text-xs text-slate-400 mt-2 font-semibold">카드를 터치하면 숨겨진 '${col2Name}'가 보입니다.</p>
+            </div>
+            <div id="flash-card-back" class="hidden space-y-4">
+              <span class="text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full">${col2Name}</span>
+              <h3 class="text-xl sm:text-2xl font-bold text-emerald-600 tracking-wide leading-normal">${currentItem.value}</h3>
+              <p class="text-xs text-slate-400 mt-2 font-semibold">다시 탭하면 숨깁니다.</p>
+            </div>
+          </div>
+          <div class="flex gap-4 w-full max-w-lg justify-center">
+            <button onclick="handleFlashcardResponse(false)" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-xl transition-all flex justify-center items-center gap-1 text-xs">
+              <i class="fa-solid fa-circle-xmark text-slate-400"></i> 아리송함
+            </button>
+            <button onclick="handleFlashcardResponse(true)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-md flex justify-center items-center gap-1 text-xs">
+              <i class="fa-solid fa-circle-check text-indigo-200"></i> 완벽히 앎
+            </button>
+          </div>
+          ${aiHintBtnHTML}
+        `;
+      } else if (quizState.type === 'multiple') {
+        const options = generateMultipleChoiceOptions(currentItem);
+        workspace.innerHTML = `
+          ${progressHTML}
+          <div class="space-y-2 mb-6">
+            <span class="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">다음 '${col1Name}'에 알맞은 '${col2Name}'를 고르세요</span>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight pt-2 leading-normal">${currentItem.key}</h3>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+            ${options.map((opt, i) => `
+              <button onclick="submitMultipleChoiceAnswer('${opt.replace(/'/g, "\\'")}')" class="bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 text-slate-700 hover:text-indigo-950 font-semibold p-4 rounded-xl text-left transition-all flex items-center gap-3">
+                <span class="w-6 h-6 bg-white border rounded-full text-xs font-bold flex items-center justify-center text-slate-400 shadow-inner flex-shrink-0">${i+1}</span>
+                <span class="text-xs leading-relaxed break-all">${opt}</span>
+              </button>
+            `).join('')}
+          </div>
+          ${aiHintBtnHTML}
+        `;
+      } else if (quizState.type === 'typing') {
+        workspace.innerHTML = `
+          ${progressHTML}
+          <div class="space-y-2 mb-6">
+            <span class="text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full">해당 '${col1Name}'에 매칭되는 올바른 '${col2Name}'를 쓰세요</span>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight pt-2 leading-normal">${currentItem.key}</h3>
+          </div>
+          <div class="w-full max-w-lg space-y-3">
+            <input type="text" id="typing-answer-input" onkeydown="handleTypingSubmit(event)" placeholder="'${col2Name}' 내용을 타이핑한 후 Enter" class="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold focus:outline-none focus:border-indigo-600 transition-all text-center">
+            <button onclick="submitTypingAnswer()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-md text-xs">
+              확인하고 다음으로
+            </button>
+          </div>
+          ${aiHintBtnHTML}
+        `;
+        setTimeout(() => {
+          const input = document.getElementById('typing-answer-input');
+          if (input) input.focus();
+        }, 150);
+      }
+    }
+
+    function flipFlashCard() {
+      const front = document.getElementById('flash-card-front');
+      const back = document.getElementById('flash-card-back');
+      if (front.classList.contains('hidden')) {
+        front.classList.remove('hidden');
+        back.classList.add('hidden');
+      } else {
+        front.classList.add('hidden');
+        back.classList.remove('hidden');
+      }
+    }
+
+    function handleFlashcardResponse(known) {
+      const currentItem = quizState.words[quizState.currentIdx];
+      if (known) {
+        quizState.score++;
+      } else {
+        quizState.wrongList.push(currentItem);
+      }
+      quizState.currentIdx++;
+      runQuizCycle();
+    }
+
+    // 4지선다형 무작위 보기 믹스업
+    function generateMultipleChoiceOptions(correctItem) {
+      const list = [correctItem.value];
+      const wrongPool = ACTIVE_WORDS_DATABASE.filter(x => x.value !== correctItem.value);
+      const shuffledPool = fisherYatesShuffle(wrongPool);
+
+      for (let i = 0; i < Math.min(3, shuffledPool.length); i++) {
+        list.push(shuffledPool[i].value);
+      }
+
+      return fisherYatesShuffle(list);
+    }
+
+    function submitMultipleChoiceAnswer(selectedVal) {
+      const currentItem = quizState.words[quizState.currentIdx];
+      if (selectedVal === currentItem.value) {
+        quizState.score++;
+        showToast("참 정답입니다! 🎉");
+      } else {
+        quizState.wrongList.push(currentItem);
+        showToast(`오답! 정답: [${currentItem.value}]`, true);
+      }
+      quizState.currentIdx++;
+      setTimeout(runQuizCycle, 900);
+    }
+
+    function handleTypingSubmit(e) {
+      if (e.key === 'Enter') {
+        submitTypingAnswer();
+      }
+    }
+
+    function submitTypingAnswer() {
+      const input = document.getElementById('typing-answer-input');
+      if (!input) return;
+
+      const userAns = input.value.trim().toLowerCase();
+      const currentItem = quizState.words[quizState.currentIdx];
+      const correctAns = currentItem.value.trim().toLowerCase();
+
+      let isCorrect = false;
+      if (userAns === correctAns) {
+        isCorrect = true;
+      } else {
+        const parts = correctAns.split(',').map(x => x.trim());
+        if (parts.includes(userAns)) {
+          isCorrect = true;
+        }
+      }
+
+      if (isCorrect) {
+        quizState.score++;
+        showToast("완벽한 정답입니다! 👍");
+      } else {
+        quizState.wrongList.push(currentItem);
+        showToast(`오답! 정답: ${currentItem.value}`, true);
+      }
+
+      quizState.currentIdx++;
+      setTimeout(runQuizCycle, 900);
+    }
+
+    function renderQuizResult() {
+      const workspace = document.getElementById('quiz-workspace');
+      const total = quizState.words.length;
+      const rate = Math.round((quizState.score / total) * 100);
+
+      let feedback = "조금 더 정진해보면 백점의 기쁨을 완벽히 맛볼 수 있습니다!";
+      let badgeColor = "bg-rose-100 text-rose-800";
+      if (rate >= 90) {
+        feedback = "우수한 암기 수준을 증명해냈습니다. 완전 대단해요! 🏆";
+        badgeColor = "bg-emerald-100 text-emerald-800";
+      } else if (rate >= 70) {
+        feedback = "조금만 세밀하게 확인하면 완전 정복할 수 있습니다!";
+        badgeColor = "bg-indigo-100 text-indigo-800";
+      }
+
+      workspace.innerHTML = `
+        <div class="max-w-md w-full space-y-6">
+          <div class="space-y-2">
+            <span class="text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 rounded-full ${badgeColor}">자가 성적 종합 리포트</span>
+            <h3 class="text-2xl font-black text-slate-900 pt-2">암기 여정 완료!</h3>
+            <p class="text-xs text-slate-500 font-medium">${feedback}</p>
+          </div>
+
+          <div class="bg-slate-50 border border-slate-100 p-6 rounded-2xl flex items-center justify-around">
+            <div class="text-center">
+              <span class="text-3xl font-extrabold text-indigo-600">${quizState.score}</span>
+              <span class="text-slate-400 text-sm"> / ${total} 개</span>
+              <p class="text-[10px] text-slate-400 font-bold mt-1">확인 통과</p>
+            </div>
+            <div class="w-[1px] h-10 bg-slate-200"></div>
+            <div class="text-center">
+              <span class="text-3xl font-extrabold text-indigo-600">${rate}%</span>
+              <p class="text-[10px] text-slate-400 font-bold mt-1">최종 성취율</p>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <button onclick="resetQuizWorkspace()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl transition-all text-xs">
+              돌아가기
+            </button>
+            ${quizState.wrongList.length > 0 ? `
+              <button onclick="retryOnlyWrongWords()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all text-xs shadow-md">
+                틀린 ${quizState.wrongList.length}개 집중 재도전
+              </button>
+            ` : `
+              <button onclick="startQuiz('${quizState.type}')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all text-xs shadow-md">
+                처음부터 다시 풀기
+              </button>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    function retryOnlyWrongWords() {
+      const wrongs = [...quizState.wrongList];
+      quizState.words = fisherYatesShuffle(wrongs);
+      quizState.currentIdx = 0;
+      quizState.score = 0;
+      quizState.wrongList = [];
+      runQuizCycle();
+      showToast("오답 노트 집중 재시험을 전개합니다!");
+    }
+
+
+    /************************************************************************
+     * 10. Gemini 2.5 Flash API 연동 코어 모듈 (Exponential Backoff 필수 준수)
+     ************************************************************************/
+    async function makeGeminiApiCall(userPrompt, systemInstructionText = "", structuredJsonSchema = null) {
+      const currentApiKey = getActiveApiKey();
+      if (!currentApiKey) {
+        throw new Error("Gemini API 키가 설정되지 않았습니다. 패널에 키를 등록하거나 런타임 환경에서 주입해주셔야 합니다.");
+      }
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${currentApiKey}`;
+
+      // API Payload 조립
+      const payload = {
+        contents: [{
+          parts: [{ text: userPrompt }]
+        }]
+      };
+
+      if (systemInstructionText) {
+        payload.systemInstruction = {
+          parts: [{ text: systemInstructionText }]
+        };
+      }
+
+      if (structuredJsonSchema) {
+        payload.generationConfig = {
+          responseMimeType: "application/json",
+          responseSchema: structuredJsonSchema
+        };
+      }
+
+      // Exponential Backoff Retry (Up to 5 times)
+      const maxRetries = 5;
+      const delays = [1000, 2000, 4000, 8000, 16000];
+
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP Error Status: ${response.status}`);
+          }
+
+          const result = await response.json();
+          return result;
+        } catch (error) {
+          if (attempt === maxRetries - 1) {
+            throw error; // 5회 실패 시 에러 최종 방출
+          }
+          // Delay before next attempt
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        }
+      }
+    }
+
+    // AI 신규 암기 데이터 세트 생성
+    async function generateSetWithAI() {
+      const topic = document.getElementById('ai-generate-topic').value.trim();
+      const col1Name = document.getElementById('label-col1').value || "질문";
+      const col2Name = document.getElementById('label-col2').value || "정답";
+
+      if (!topic) {
+        showToast("생성하고자 하는 암기 토픽을 작성하세요.", true);
+        return;
+      }
+
+      if (!navigator.onLine) {
+        showToast("인터넷이 끊긴 오프라인 환경에서는 AI 기능을 수행할 수 없습니다.", true);
+        return;
+      }
+
+      const genBtn = document.getElementById('ai-gen-btn');
+      const originalText = genBtn.innerHTML;
+      genBtn.disabled = true;
+      genBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> AI 연산 가동 중...`;
+
+      showToast("인공지능이 최적의 1:1 대응 암기 세트를 빌드 중입니다...");
+
+      const prompt = `'${topic}' 주제와 어울리는 1:1 대칭 매칭 암기 데이터 세트 25개를 무작위 셔플해서 생성해 줘. 질문 열 라벨은 '${col1Name}', 정답 열 라벨은 '${col2Name}'로 매치하여 데이터 배열을 완성해야 해.`;
+      
+      const systemPrompt = "너는 교육용 데이터 가공 전문가야. 요청된 주제에 대해 1번부터 25번까지 1:1 대응 관계가 확실한 고품질 교육 자재 데이터 구조를 만들어야 해. 반드시 제공될 스키마에 부합하는 완벽한 JSON 오브젝트로만 반환하고 다른 일반 텍스트나 markdown 문법은 일절 생략해.";
+      
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          labelCol1: { type: "STRING" },
+          labelCol2: { type: "STRING" },
+          data: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                num: { type: "INTEGER" },
+                key: { type: "STRING" },
+                value: { type: "STRING" }
+              },
+              required: ["num", "key", "value"]
+            }
+          }
+        },
+        required: ["title", "labelCol1", "labelCol2", "data"]
+      };
+
+      try {
+        const result = await makeGeminiApiCall(prompt, systemPrompt, schema);
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!text) {
+          throw new Error("API 응답 반환 값이 비어 있습니다.");
+        }
+
+        const parsed = JSON.parse(text);
+        
+        // 정교화 이식 적용
+        document.getElementById('custom-test-title').value = parsed.title || `${topic} 학습 평가`;
+        document.getElementById('label-col1').value = parsed.labelCol1 || col1Name;
+        document.getElementById('label-col2').value = parsed.labelCol2 || col2Name;
+
+        ACTIVE_WORDS_DATABASE = parsed.data.map((item, idx) => ({
+          num: item.num || (idx + 1),
+          key: item.key,
+          value: item.value
+        }));
+
+        document.getElementById('range-start').value = 1;
+        document.getElementById('range-end').value = ACTIVE_WORDS_DATABASE.length;
+
+        const countSlider = document.getElementById('question-count-slider');
+        countSlider.max = ACTIVE_WORDS_DATABASE.length;
+        countSlider.value = Math.min(25, ACTIVE_WORDS_DATABASE.length);
+        document.getElementById('question-count-label').innerText = `${countSlider.value}문항`;
+
+        updateControlPanelStatus("AI 자동 수집 데이터 활성", ACTIVE_WORDS_DATABASE.length);
+        triggerRebuild();
+        showToast(`AI 성공 빌드! 총 ${ACTIVE_WORDS_DATABASE.length}개의 데이터 수집 완료.`);
+      } catch (error) {
+        console.error(error);
+        showToast(error.message || "AI 생성 연산 중 장애가 일어났습니다. API키 또는 환경을 확인하세요.", true);
+      } finally {
+        genBtn.disabled = false;
+        genBtn.innerHTML = originalText;
+      }
+    }
+
+    // AI 정답 자동 빈칸 채우기
+    async function fillMissingWithAI() {
+      const col1Name = document.getElementById('label-col1').value || "질문";
+      const col2Name = document.getElementById('label-col2').value || "정답";
+
+      if (ACTIVE_WORDS_DATABASE.length === 0) {
+        showToast("채울 대상 원본 표 데이터가 비어 있습니다.", true);
+        return;
+      }
+
+      if (!navigator.onLine) {
+        showToast("오프라인 상황에서는 AI 자동 완성 기능을 수행할 수 없습니다.", true);
+        return;
+      }
+
+      // 비어 있는 정답 열 데이터 수집 검출
+      const missingTargets = ACTIVE_WORDS_DATABASE.filter(x => !x.value || x.value.trim() === "");
+      if (missingTargets.length === 0) {
+        showToast("모든 항목에 정답이 이미 가득 채워져 있습니다.");
+        return;
+      }
+
+      const fillBtn = document.getElementById('ai-fill-btn');
+      const originalText = fillBtn.innerHTML;
+      fillBtn.disabled = true;
+      fillBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> 분석 채우기 중...`;
+
+      showToast(`AI가 비어 있는 ${missingTargets.length}개의 정답을 채우는 중입니다...`);
+
+      const targetListStr = missingTargets.map(x => `${x.num}. ${x.key}`).join("\n");
+      const prompt = `'${col1Name}' 항목 리스트가 다음과 같을 때, 각 항목에 알맞은 올바른 '${col2Name}' 정보를 추론하여 스키마 데이터 형식으로 리턴해 줘.\n\n리스트:\n${targetListStr}`;
+
+      const systemPrompt = "너는 지능형 1:1 매칭 데이터 매퍼야. 제공된 질문 키값들을 기반으로 가장 널리 공인된 올바른 뜻과 정의, 정답을 찾아서 JSON 스키마 규격으로 정답 배열만 채워 넣어서 돌려주어야 해.";
+
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          results: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                num: { type: "INTEGER" },
+                value: { type: "STRING" }
+              },
+              required: ["num", "value"]
+            }
+          }
+        },
+        required: ["results"]
+      };
+
+      try {
+        const result = await makeGeminiApiCall(prompt, systemPrompt, schema);
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!text) {
+          throw new Error("AI 응답 데이터 채취 누락");
+        }
+
+        const parsed = JSON.parse(text);
+        parsed.results.forEach(res => {
+          const match = ACTIVE_WORDS_DATABASE.find(item => item.num === res.num);
+          if (match) {
+            match.value = res.value;
+          }
         });
 
-        rangeColumnSelect.addEventListener('change', () => {
-            detectRangeLimits();
-            updateAppLayout();
-        });
+        triggerRebuild();
+        showToast("AI 정답 자동 채우기 작업이 완벽히 완료되었습니다!");
+      } catch (error) {
+        console.error(error);
+        showToast("자동 채우기 연산 실패. API 환경을 다시 점검해 주세요.", true);
+      } finally {
+        fillBtn.disabled = false;
+        fillBtn.innerHTML = originalText;
+      }
+    }
 
-        [rangeStart, rangeEnd].forEach(input => {
-            input.addEventListener('input', () => {
-                updateAppLayout();
-            });
-        });
+    // 온라인 퀴즈 AI 힌트 지능 생성기
+    async function askAiForHint(questionKey, expectedAnswer) {
+      if (!navigator.onLine) {
+        showToast("오프라인 상황에서는 실시간 AI 힌트를 출력할 수 없습니다.", true);
+        return;
+      }
 
-        // Set Active Mode UI
-        function setMode(mode) {
-            activeMode = mode;
-            ['optEng', 'optKor', 'optShuf'].forEach(id => {
-                const btn = document.getElementById(id);
-                btn.className = "py-2.5 px-3 rounded-xl border-2 bg-white text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all";
-            });
+      const hintBtn = document.getElementById('ai-hint-btn');
+      const hintBox = document.getElementById('ai-hint-box');
+      
+      const originalText = hintBtn.innerHTML;
+      hintBtn.disabled = true;
+      hintBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> AI 힌트 유추 중...`;
 
-            const activeBtnId = mode === 'ENG' ? 'optEng' : (mode === 'KOR' ? 'optKor' : 'optShuf');
-            document.getElementById(activeBtnId).className = "py-2.5 px-3 rounded-xl border-2 border-brand-500 bg-brand-50 text-brand-700 font-bold text-sm transition-all shadow-sm";
+      hintBox.classList.remove('hidden');
+      hintBox.innerHTML = `
+        <div class="flex items-center gap-2 text-indigo-600 font-bold">
+          <i class="fa-solid fa-spinner animate-spin"></i> AI 비서가 연상 힌트 껍질을 벗기는 중...
+        </div>
+      `;
 
-            updateAppLayout();
+      const prompt = `'${questionKey}' 라는 질문 항목의 정답은 '${expectedAnswer}'야. 이 정답을 학생이 잘 떠올릴 수 있도록, 정답 단어를 직접 발설하지 않으면서 한두 줄 내외의 명료하고 흥미로운 힌트 및 연상 작용 예시 문장을 작성해 줘.`;
+      const systemPrompt = "너는 친절하고 위트 있는 암기력 촉진 학습 멘토야. 절대로 정답 단어를 직접 말하면 안 되고, 학생이 무릎을 탁 칠 수 있도록 흥미로운 언어유희나 맥락적 힌트를 35자 내외의 한국어로 완성해 줘.";
+
+      try {
+        const result = await makeGeminiApiCall(prompt, systemPrompt);
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!text) {
+          throw new Error("AI 힌트 문구 회수 누락");
         }
 
-        function handleFileSelection(file) {
-            const ext = file.name.split('.').pop().toLowerCase();
-            if (ext === 'csv') {
-                Papa.parse(file, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (res) => processRawJSON(res.data, file.name),
-                    error: () => showToast("CSV 파일 해독 실패", "error")
-                });
-            } else if (['xlsx', 'xls'].includes(ext)) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheet = workbook.SheetNames[0];
-                        const worksheet = workbook.Sheets[firstSheet];
-                        const rawData = XLSX.utils.sheet_to_json(worksheet);
-                        processRawJSON(rawData, file.name);
-                    } catch (err) {
-                        showToast("엑셀 파일 해독 실패", "error");
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            } else {
-                showToast("지원되지 않는 규격입니다.", "error");
-            }
-        }
-
-        // Analyze and extract valid rows from Raw JSON
-        function processRawJSON(rawRows, fileName) {
-            if (!rawRows || rawRows.length === 0) {
-                showToast("불러온 데이터가 비어 있습니다.", "error");
-                return;
-            }
-
-            // Discover excel columns dynamically
-            const sampleRow = rawRows[0];
-            excelHeaders = Object.keys(sampleRow);
-            
-            // Populate Range Column Selector Option list
-            rangeColumnSelect.innerHTML = '';
-            let selectedDefaultCol = '';
-            
-            excelHeaders.forEach(col => {
-                const opt = document.createElement('option');
-                opt.value = col;
-                opt.innerText = col;
-                rangeColumnSelect.appendChild(opt);
-                
-                // Smart auto-detection for range column
-                const clean = col.trim().toLowerCase();
-                if (clean.includes('지문') || clean.includes('출처') || clean.includes('번호') || clean.includes('강') || clean.includes('day')) {
-                    selectedDefaultCol = col;
-                }
-            });
-
-            if (selectedDefaultCol) {
-                rangeColumnSelect.value = selectedDefaultCol;
-            } else if (excelHeaders.length > 0) {
-                rangeColumnSelect.value = excelHeaders[0];
-            }
-
-            // Detect standard word/meaning columns
-            let wordKey = null;
-            let meaningKey = null;
-
-            excelHeaders.forEach(key => {
-                const clean = key.trim();
-                if (clean.includes("단어")) wordKey = key;
-                if (clean.includes("뜻")) meaningKey = key;
-            });
-
-            if (!wordKey || !meaningKey) {
-                excelHeaders.forEach(key => {
-                    const clean = key.trim().toLowerCase();
-                    if (['word', 'vocabulary', 'eng'].includes(clean)) wordKey = key;
-                    if (['meaning', 'kor', 'definition'].includes(clean)) meaningKey = key;
-                });
-            }
-
-            // Absolute fallback
-            if (!wordKey && excelHeaders.length > 0) wordKey = excelHeaders[0];
-            if (!meaningKey && excelHeaders.length > 1) meaningKey = excelHeaders[1];
-
-            if (!wordKey || !meaningKey) {
-                showToast("단어 혹은 뜻 기준 열을 파싱할 수 없습니다.", "error");
-                return;
-            }
-
-            // Parse clean word objects
-            wordsData = rawRows.map((row, idx) => {
-                // Find criteria column value
-                const filterCol = rangeColumnSelect.value;
-                let filterVal = idx + 1; // Default is physical row index
-                if (filterCol && row[filterCol] !== undefined) {
-                    // Try to extract numerical parts
-                    const rawVal = String(row[filterCol]).trim();
-                    const numMatch = rawVal.match(/\d+/);
-                    if (numMatch) {
-                        filterVal = parseInt(numMatch[0]);
-                    }
-                }
-
-                return {
-                    word: row[wordKey] ? String(row[wordKey]).trim() : '',
-                    meaning: row[meaningKey] ? String(row[meaningKey]).trim() : '',
-                    rangeVal: filterVal,
-                    originalRow: row
-                };
-            }).filter(item => item.word !== '' && item.meaning !== '');
-
-            if (wordsData.length === 0) {
-                showToast("유효한 단어 행을 식별할 수 없습니다.", "error");
-                return;
-            }
-
-            // Refresh range configuration
-            detectRangeLimits();
-
-            // Set Upload UI States
-            dropzone.classList.add('hidden');
-            fileInfoBox.classList.remove('hidden');
-            loadedFileName.innerText = fileName;
-            
-            btnPrint.disabled = false;
-            previewLed.classList.replace('bg-slate-300', 'bg-emerald-500');
-
-            updateAppLayout();
-            showToast("단어장 파일이 연동되었습니다.", "success");
-        }
-
-        // Auto limit ranges based on dynamic values
-        function detectRangeLimits() {
-            const filterCol = rangeColumnSelect.value;
-            if (!filterCol || wordsData.length === 0) {
-                rangeDetectStatus.innerText = "감지 실패";
-                return;
-            }
-
-            // Recalculate range values for current selected column
-            wordsData.forEach((item, idx) => {
-                const rawVal = String(item.originalRow[filterCol] || '').trim();
-                const numMatch = rawVal.match(/\d+/);
-                item.rangeVal = numMatch ? parseInt(numMatch[0]) : idx + 1;
-            });
-
-            const vals = wordsData.map(item => item.rangeVal).filter(v => !isNaN(v));
-            if (vals.length > 0) {
-                const minV = Math.min(...vals);
-                const maxV = Math.max(...vals);
-                rangeStart.min = minV;
-                rangeStart.max = maxV;
-                rangeEnd.min = minV;
-                rangeEnd.max = maxV;
-                
-                rangeStart.value = minV;
-                rangeEnd.value = maxV;
-                
-                rangeDetectStatus.innerText = `감지 완료 (최소 ${minV} ~ 최대 ${maxV})`;
-            } else {
-                rangeDetectStatus.innerText = "수치 탐색 실패";
-            }
-        }
-
-        // Filter and compile active test set
-        function updateAppLayout() {
-            if (wordsData.length === 0) return;
-
-            let filteredList = [...wordsData];
-
-            // Apply Range Filter if checked
-            if (useRangeFilter.checked) {
-                const rMin = parseInt(rangeStart.value) || 0;
-                const rMax = parseInt(rangeEnd.value) || 999999;
-                filteredList = filteredList.filter(item => item.rangeVal >= rMin && item.rangeVal <= rMax);
-            }
-
-            loadedFileDetails.innerText = `전체 단어: ${wordsData.length}개 / 필터 범위: ${filteredList.length}개`;
-
-            // Adjust 문항 수 Slider maximum boundary
-            const maxVal = Math.min(50, filteredList.length);
-            const minVal = Math.min(20, filteredList.length);
-
-            itemCountRange.max = maxVal;
-            itemCountRange.min = minVal;
-            if (parseInt(itemCountRange.value) > maxVal) itemCountRange.value = maxVal;
-            if (parseInt(itemCountRange.value) < minVal) itemCountRange.value = minVal;
-            
-            itemCountDisplay.innerText = `${itemCountRange.value}개` + (itemCountRange.value == '25' ? ' (권장)' : '');
-            
-            const targetSize = parseInt(itemCountRange.value);
-            
-            // Randomly slice questions from target list
-            const shuffled = [...filteredList].sort(() => 0.5 - Math.random());
-            selectedQuestions = shuffled.slice(0, targetSize);
-
-            previewCount.innerText = `현재 조건: ${selectedQuestions.length}문항 적용됨`;
-
-            // Draw Live Mini A4 Preview
-            renderMiniPreview();
-        }
-
-        function renderMiniPreview() {
-            if (selectedQuestions.length === 0) {
-                a4MiniPreview.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-center text-slate-400 py-32 space-y-3" id="previewPlaceholder">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <p class="font-semibold text-sm">조건에 맞추어 실시간 시험지 양식이 구성됩니다.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Split questions into 2 columns
-            const mid = Math.ceil(selectedQuestions.length / 2);
-            const leftCol = selectedQuestions.slice(0, mid);
-            const rightCol = selectedQuestions.slice(mid);
-
-            // Compute ideal padding based on question counts (Maximize space)
-            const paddingClass = selectedQuestions.length > 40 ? 'py-1 text-[8px]' : (selectedQuestions.length > 30 ? 'py-1.5 text-[9px]' : 'py-2.5 text-[10px]');
-
-            let htmlString = `
-                <div class="bg-white text-slate-900 leading-none">
-                    <!-- Centered worksheet Header -->
-                    <div class="text-center mb-2">
-                        <h2 class="text-[13px] font-black tracking-wider text-slate-950 m-0">
-                            위너스 영어 단어 평가
-                        </h2>
-                    </div>
-
-                    <!-- Professional Info Box Grid -->
-                    <table class="w-full border-collapse border border-slate-950 text-center mb-3" style="font-size: 7px; table-layout: fixed;">
-                        <tr>
-                            <td class="border border-slate-950 bg-slate-100 font-extrabold py-0.5" style="width: 10%;">날짜</td>
-                            <td class="border border-slate-950 text-slate-500 font-medium" style="width: 20%;">2026.   .   </td>
-                            <td class="border border-slate-950 bg-slate-100 font-extrabold" style="width: 10%;">반</td>
-                            <td class="border border-slate-950" style="width: 20%;"></td>
-                            <td class="border border-slate-950 bg-slate-100 font-extrabold" style="width: 10%;">이름</td>
-                            <td class="border border-slate-950" style="width: 20%;"></td>
-                            <td class="border border-slate-950 bg-slate-100 font-extrabold text-rose-600" style="width: 10%;">점수</td>
-                            <td class="border border-slate-950 font-extrabold text-slate-700" style="width: 10%; font-size: 6px;">/ ${selectedQuestions.length}</td>
-                        </tr>
-                    </table>
-
-                    <!-- Bulletproof table columns split to avoid display: grid and flex rendering bugs -->
-                    <table class="w-full" style="border: none; border-collapse: collapse; table-layout: fixed;">
-                        <tr style="border: none;">
-                            <!-- Left Column -->
-                            <td style="width: 48.5%; vertical-align: top; border: none; padding: 0;">
-                                <table class="w-full border-collapse border-[1.5px] border-slate-950" style="table-layout: fixed; width: 100%;">
-                                    <thead>
-                                        <tr class="bg-slate-100 text-[8px] font-extrabold border-b-[1.5px] border-slate-950">
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 12%;">No</th>
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 44%;">영어 단어</th>
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 44%;">뜻 (한글)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-            `;
-
-            // Draw Left Rows
-            leftCol.forEach((item, index) => {
-                const no = index + 1;
-                const holes = makeHoleContent(item.word, item.meaning, no, false);
-                htmlString += `
-                    <tr class="border-b border-slate-300">
-                        <td class="border border-slate-950 text-center font-extrabold bg-slate-50 ${paddingClass}">${no}</td>
-                        <td class="border border-slate-950 px-1.5 font-medium truncate ${paddingClass}">${holes.word}</td>
-                        <td class="border border-slate-950 px-1.5 font-medium truncate ${paddingClass}">${holes.meaning}</td>
-                    </tr>
-                `;
-            });
-
-            htmlString += `
-                                    </tbody>
-                                </table>
-                            </td>
-                            
-                            <!-- Middle Gap spacer -->
-                            <td style="width: 3%; border: none; padding: 0;"></td>
-
-                            <!-- Right Column -->
-                            <td style="width: 48.5%; vertical-align: top; border: none; padding: 0;">
-                                <table class="w-full border-collapse border-[1.5px] border-slate-950" style="table-layout: fixed; width: 100%;">
-                                    <thead>
-                                        <tr class="bg-slate-100 text-[8px] font-extrabold border-b-[1.5px] border-slate-950">
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 12%;">No</th>
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 44%;">영어 단어</th>
-                                            <th class="border border-slate-950 py-1 text-center" style="width: 44%;">뜻 (한글)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-            `;
-
-            // Draw Right Rows
-            rightCol.forEach((item, index) => {
-                const no = mid + index + 1;
-                const holes = makeHoleContent(item.word, item.meaning, no, false);
-                htmlString += `
-                    <tr class="border-b border-slate-300">
-                        <td class="border border-slate-950 text-center font-extrabold bg-slate-50 ${paddingClass}">${no}</td>
-                        <td class="border border-slate-950 px-1.5 font-medium truncate ${paddingClass}">${holes.word}</td>
-                        <td class="border border-slate-950 px-1.5 font-medium truncate ${paddingClass}">${holes.meaning}</td>
-                    </tr>
-                `;
-            });
-
-            // Fill empty row on right to match left height perfectly if odd
-            if (rightCol.length < leftCol.length) {
-                htmlString += `
-                    <tr>
-                        <td class="border border-slate-950 text-center bg-slate-50 ${paddingClass}">&nbsp;</td>
-                        <td class="border border-slate-950 ${paddingClass}">&nbsp;</td>
-                        <td class="border border-slate-950 ${paddingClass}">&nbsp;</td>
-                    </tr>
-                `;
-            }
-
-            htmlString += `
-                                    </tbody>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
-
-                    <!-- Footer -->
-                    <div class="text-right text-[6px] text-slate-400 mt-2 border-t border-slate-100 pt-1">
-                        위너스 영어 학원 (WINNERS ENGLISH ACADEMY) - A4 최적화 시험지 출력물
-                    </div>
-                </div>
-            `;
-
-            a4MiniPreview.innerHTML = htmlString;
-        }
-
-        // Helper to output styled blank or text according to test modes
-        function makeHoleContent(word, meaning, index, isAnswerSheet = false) {
-            if (activeMode === 'ENG') {
-                // English Question: Word stays visible, Meaning becomes a blank space
-                return {
-                    word: word,
-                    meaning: isAnswerSheet ? `<span class="text-rose-600 font-bold">${meaning}</span>` : `<div class="h-3 w-full bg-slate-100/30 rounded border border-dashed border-slate-300"></div>`
-                };
-            } else if (activeMode === 'KOR') {
-                // Meaning Question: Meaning stays visible, Word becomes a blank space
-                return {
-                    word: isAnswerSheet ? `<span class="text-rose-600 font-bold">${word}</span>` : `<div class="h-3 w-full bg-slate-100/30 rounded border border-dashed border-slate-300"></div>`,
-                    meaning: meaning
-                };
-            } else {
-                // SHUFFLE Mode: Even numbers hide meaning, odd numbers hide word
-                const hideMeaning = (index % 2 === 0);
-                if (hideMeaning) {
-                    return {
-                        word: word,
-                        meaning: isAnswerSheet ? `<span class="text-rose-600 font-bold">${meaning}</span>` : `<div class="h-3 w-full bg-slate-100/30 rounded border border-dashed border-slate-300"></div>`
-                    };
-                } else {
-                    return {
-                        word: isAnswerSheet ? `<span class="text-rose-600 font-bold">${word}</span>` : `<div class="h-3 w-full bg-slate-100/30 rounded border border-dashed border-slate-300"></div>`,
-                        meaning: meaning
-                    };
-                }
-            }
-        }
-
-        function buildFullPrintHTML(isAnswerSheet = false) {
-            const mid = Math.ceil(selectedQuestions.length / 2);
-            const leftCol = selectedQuestions.slice(0, mid);
-            const rightCol = selectedQuestions.slice(mid);
-
-            // Dynamically computed padding for the physical A4 PDF render (A4 page is exactly 296mm to avoid page break bleed)
-            const paddingStyle = selectedQuestions.length > 40 
-                ? 'padding: 5px 10px; font-size: 11px;' 
-                : (selectedQuestions.length > 30 ? 'padding: 8px 10px; font-size: 12px;' : 'padding: 12px 10px; font-size: 14px;');
-
-            let html = `
-                <div style="width: 210mm; height: 296mm; padding: 15mm 15mm 12mm 15mm; box-sizing: border-box; background: white; color: black; font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; position: relative; overflow: hidden; page-break-after: always; margin: 0 auto;">
-                    
-                    <!-- Top Title Section -->
-                    <div style="text-align: center; margin-bottom: 12px; margin-top: 0;">
-                        <h2 style="font-size: 22px; font-weight: 900; letter-spacing: 1px; margin: 0; color: #000;">
-                            ${isAnswerSheet ? '위너스 영어 단어 평가 [교사용 정답지]' : '위너스 영어 단어 평가'}
-                        </h2>
-                    </div>
-
-                    <!-- Professional Student Info Grid -->
-                    <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; text-align: center; margin-bottom: 18px; font-size: 11px; table-layout: fixed;">
-                        <tr>
-                            <td style="border: 1px solid #000; background-color: #f1f5f9; font-weight: 900; width: 10%; padding: 6px 0;">날짜</td>
-                            <td style="border: 1px solid #000; color: #64748b; font-weight: 600; width: 20%;">2026.   .   </td>
-                            <td style="border: 1px solid #000; background-color: #f1f5f9; font-weight: 900; width: 10%;">반</td>
-                            <td style="border: 1px solid #000; width: 20%;"></td>
-                            <td style="border: 1px solid #000; background-color: #f1f5f9; font-weight: 900; width: 10%;">이름</td>
-                            <td style="border: 1px solid #000; width: 20%;"></td>
-                            <td style="border: 1px solid #000; background-color: #f1f5f9; font-weight: 900; width: 10%; color: #dc2626;">점수</td>
-                            <td style="border: 1px solid #000; font-weight: 900; color: #334155; width: 10%; font-size: 10px;">/ ${selectedQuestions.length}</td>
-                        </tr>
-                    </table>
-
-                    <!-- Two-column grid using standard stable table wrapper to completely eliminate flex overlap bugs -->
-                    <table style="width: 100%; border: none; border-collapse: collapse; table-layout: fixed; margin-top: 5px;">
-                        <tr style="border: none;">
-                            <!-- Left Column Wrapper -->
-                            <td style="width: 48.5%; vertical-align: top; padding: 0; border: none;">
-                                <table style="width: 100%; table-layout: fixed; border-collapse: collapse; border: 2.5px solid black;">
-                                    <thead>
-                                        <tr style="background-color: #f1f5f9; font-size: 11px; font-weight: 900; border-bottom: 2.5px solid black;">
-                                            <th style="border: 1px solid black; width: 12%; text-align: center; padding: 6px 0;">No</th>
-                                            <th style="border: 1px solid black; width: 44%; text-align: center; padding: 6px 0;">영어 단어</th>
-                                            <th style="border: 1px solid black; width: 44%; text-align: center; padding: 6px 0;">뜻 (한글)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-            `;
-
-            // Left side rows
-            leftCol.forEach((item, index) => {
-                const no = index + 1;
-                const holes = makeHoleContent(item.word, item.meaning, no, isAnswerSheet);
-                html += `
-                    <tr>
-                        <td style="border: 1px solid black; text-align: center; font-weight: 900; background-color: #f8fafc; ${paddingStyle}">${no}</td>
-                        <td style="border: 1px solid black; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${paddingStyle}">${holes.word}</td>
-                        <td style="border: 1px solid black; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${paddingStyle}">${holes.meaning}</td>
-                    </tr>
-                `;
-            });
-
-            html += `
-                                        </tbody>
-                                    </table>
-                                </td>
-
-                                <!-- Spacer Column -->
-                                <td style="width: 3%; border: none; padding: 0;"></td>
-
-                                <!-- Right Column Wrapper -->
-                                <td style="width: 48.5%; vertical-align: top; padding: 0; border: none;">
-                                    <table style="width: 100%; table-layout: fixed; border-collapse: collapse; border: 2.5px solid black;">
-                                        <thead>
-                                            <tr style="background-color: #f1f5f9; font-size: 11px; font-weight: 900; border-bottom: 2.5px solid black;">
-                                                <th style="border: 1px solid black; width: 12%; text-align: center; padding: 6px 0;">No</th>
-                                                <th style="border: 1px solid black; width: 44%; text-align: center; padding: 6px 0;">영어 단어</th>
-                                                <th style="border: 1px solid black; width: 44%; text-align: center; padding: 6px 0;">뜻 (한글)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-            `;
-
-            // Right side rows
-            rightCol.forEach((item, index) => {
-                const no = mid + index + 1;
-                const holes = makeHoleContent(item.word, item.meaning, no, isAnswerSheet);
-                html += `
-                    <tr>
-                        <td style="border: 1px solid black; text-align: center; font-weight: 900; background-color: #f8fafc; ${paddingStyle}">${no}</td>
-                        <td style="border: 1px solid black; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${paddingStyle}">${holes.word}</td>
-                        <td style="border: 1px solid black; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${paddingStyle}">${holes.meaning}</td>
-                    </tr>
-                `;
-            });
-
-            // Odd balance row
-            if (rightCol.length < leftCol.length) {
-                html += `
-                    <tr>
-                        <td style="border: 1px solid black; background-color: #f8fafc; ${paddingStyle}">&nbsp;</td>
-                        <td style="border: 1px solid black; ${paddingStyle}">&nbsp;</td>
-                        <td style="border: 1px solid black; ${paddingStyle}">&nbsp;</td>
-                    </tr>
-                `;
-            }
-
-            html += `
-                                        </tbody>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-
-                    <!-- Compact Footer row, absolutely locked to the bottom margin -->
-                    <div style="position: absolute; bottom: 12mm; left: 15mm; right: 15mm; border-top: 1px solid #e2e8f0; padding-top: 6px; font-size: 9px; color: #94a3b8; font-weight: bold;">
-                        <table style="width: 100%; border: none; border-collapse: collapse;">
-                            <tr style="border: none;">
-                                <td style="text-align: left; border: none; padding: 0;">위너스 교육 연구팀 연구개발 결과물 (WINNERS ACADEMY)</td>
-                                <td style="text-align: right; border: none; padding: 0;">A4 세로 격자 맞춤형 규격 (PDF)</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-            `;
-
-            return html;
-        }
-
-        function triggerPrint() {
-            if (selectedQuestions.length === 0) return;
-
-            const printPayloadContainer = document.getElementById('print-pdf-payload');
-            printPayloadContainer.innerHTML = '';
-
-            // 1. Compile Page 1 (Student Exam Sheet) & Page 2 (Teacher Answer Sheet)
-            const page1HTML = buildFullPrintHTML(false);
-            const page2HTML = buildFullPrintHTML(true);
-
-            // Inject raw HTML directly to container without outer block wrappers that break alignments
-            printPayloadContainer.innerHTML = page1HTML + page2HTML;
-
-            // html2pdf Options Configuration (scrollY: 0 to bypass scrolled container offsets entirely)
-            const opt = {
-                margin: 0,
-                filename: `위너스_A4단어시험지_${activeMode}_${selectedQuestions.length}문항.pdf`,
-                image: { type: 'jpeg', quality: 0.99 },
-                html2canvas: { 
-                    scale: 2, 
-                    useCORS: true,
-                    scrollY: 0,
-                    scrollX: 0
-                },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
-            showToast("PDF 시험지를 생성하는 중입니다...", "success");
-
-            // Execute PDF Download directly to user computer download folder
-            html2pdf().from(printPayloadContainer).set(opt).save().then(() => {
-                showToast("시험지 및 정답지 PDF 다운로드 완료!", "success");
-            }).catch(err => {
-                showToast("PDF 컴파일 중 오류가 발생했습니다.", "error");
-                console.error(err);
-            });
-        }
-
-        // Global Reset Action
-        function resetState() {
-            setupDefaultEmbeddedData();
-            fileInput.value = '';
-            dropzone.classList.remove('hidden');
-            showToast("기본 내장 데이터로 복구되었습니다.", "success");
-        }
-
-        // Beautiful Toast Prompt
-        function showToast(msg, type = "success") {
-            const toast = document.getElementById('toast');
-            const toastText = document.getElementById('toastText');
-            const toastIcon = document.getElementById('toastIcon');
-
-            toastText.innerText = msg;
-            
-            if (type === 'error') {
-                toastIcon.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                `;
-            } else {
-                toastIcon.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                `;
-            }
-
-            toast.classList.remove('translate-y-12', 'opacity-0', 'pointer-events-none');
-            toast.classList.add('translate-y-0', 'opacity-100');
-
-            setTimeout(() => {
-                toast.classList.remove('translate-y-0', 'opacity-100');
-                toast.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
-            }, 3000);
-        }
-    </script>
+        hintBox.innerHTML = `
+          <div class="space-y-1 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100">
+            <span class="text-[10px] bg-indigo-600 text-white font-extrabold px-1.5 py-0.5 rounded">AI 스마트 힌트</span>
+            <p class="font-bold text-slate-700 pt-1 leading-relaxed">${text.trim()}</p>
+          </div>
+        `;
+      } catch (error) {
+        console.error(error);
+        hintBox.innerHTML = `<span class="text-rose-600 font-bold"><i class="fa-solid fa-circle-exclamation"></i> 로딩 지연 또는 API Key 만료로 힌트를 열지 못했습니다.</span>`;
+      } finally {
+        hintBtn.disabled = false;
+        hintBtn.innerHTML = originalText;
+      }
+    }
+  </script>
 </body>
 </html>
+
